@@ -211,3 +211,6 @@ class SignalProxy:
         if iv_nr not in self.dut.iv_term_dict_default:
             raise ValueError(f"No such default assignment to variable '{self.name}'.")
         del self.dut.iv_term_dict_default[iv_nr]
+        # reset to X signal
+        xvar = self.dut.simulator.get_var(self.name + "X" + str(self.dut.step_cycle()))
+        self.dut.iv_term_dict.update({iv_nr : xvar})

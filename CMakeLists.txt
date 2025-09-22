@@ -128,6 +128,7 @@ set(SOURCES
     "${PROJECT_SOURCE_DIR}/frontend/state_read_write.cpp"
     "${PROJECT_SOURCE_DIR}/framework/ts.cpp"
     "${PROJECT_SOURCE_DIR}/framework/symsim.cpp"
+    "${PROJECT_SOURCE_DIR}/framework/symsim_branch.cpp"
     "${PROJECT_SOURCE_DIR}/framework/independence_check.cpp"
     "${PROJECT_SOURCE_DIR}/framework/tracemgr.cpp"
     "${PROJECT_SOURCE_DIR}/framework/symtraverse.cpp"
