@@ -4,7 +4,7 @@ import pywasim_async as pywasim
 def run1(sim, dut, pywasim):
     # reset dut
     dut.rst_n.value = 0
-    dut.step()
+    sim.wait_cycle()
 
     # wait condition, get data_in
     dut.rst_n.value_def = 1

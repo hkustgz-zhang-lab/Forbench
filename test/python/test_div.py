@@ -1,11 +1,10 @@
-# import pywasim_async as pywasim
 import pywasim_async as pywasim
 
 @pywasim.register_task
 def run1(sim, dut, pywasim):  #
     # reset dut
     dut.rst.value = 1
-    dut.step()
+    sim.wait_cycle()
 
     # set dividend and divisor, pull start up
     dut.dividend.value = "dividend"
