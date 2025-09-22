@@ -27,5 +27,6 @@ sim = pywasim.async_simulator(dut)
 dut.set_init()
 run1(sim, dut, pywasim)  # pywasim.run_later(run1(sim, dut, pywasim))
 pywasim.start_loop(sim, dut, 100)
+print("branch num:", len(dut.branch_list))
     
   
