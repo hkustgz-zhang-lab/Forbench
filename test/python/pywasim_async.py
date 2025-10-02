@@ -274,6 +274,7 @@ class SignalProxy:
             iv_nr = self.dut.simulator.var(self.name)
             if self.dut.ts.is_input_var(iv_nr):
                 iv_dict = self.dut.simulator.convert({self.name : iv})
+                self.dut.branch_list[cur_branch_idx].iv_term_dict.update(iv_dict)
                 self.dut.branch_list[cur_branch_idx].iv_term_dict_default.update(iv_dict)
             else:
                 raise ValueError(f"No such input variable '{self.name}'.")
@@ -433,7 +434,8 @@ class pywasim_local_state(object):
         else:
             # sim.await will set await_cond
             tmp_stmt = ast.Module(body=[self.coroutine.funbody[self.pc]], type_ignores=[])
-            exec(compile(tmp_stmt, "<ast>", "exec"), {}, self.local)
+            # exec(compile(tmp_stmt, "<ast>", "exec"), {}, self.local)
+            exec(compile(tmp_stmt, "<ast>", "exec"), {**globals(), **getattr(sys.modules[__name__], "_extra_globals", {})}, self.local) # allow to get global env in test file
             
         self.local['sim']._set_stateptr(None)
         self.local['sim'].dut._do_not_interpret_var = False
@@ -538,7 +540,17 @@ def async_one_step(sim, dut):
             # print(f'<coroutine #{idx}>')
             cur_branch_idx = st.branch_idx
             if st.finished:
-                dut.finish_branch() # neeed idx to finish current branch
+                if dut.branch_list[cur_branch_idx].finished:    # states in same branch all finished
+                    continue
+
+                # check if all states (with same cur_branch_idx) finished
+                for st_i in _all_states:
+                    if st_i.branch_idx == cur_branch_idx and not st_i.finished:
+                        break   # found one not finished
+                else:
+                    dut.finish_branch() # all states with this branch_idx finished
+                    print(f'<branch #{cur_branch_idx} finished>')
+                # dut.finish_branch()
                 continue
             #else
             print(f'<coroutine #{idx}>')
