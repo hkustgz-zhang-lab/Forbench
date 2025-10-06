@@ -141,6 +141,9 @@ class Dut:
     def print_curr_assumptions(self):
         self.simulator.print_current_step_assumptions()
 
+    def get_var(self, name):
+        return self.simulator.get_var(name)
+    
     def __getattr__(self, signal_name):
         self.ts.lookup(signal_name) # add a check to make sure the signal_name do exist
         return SignalProxy(self, signal_name)
