@@ -16,6 +16,7 @@ _all_coroutine = []
 _all_states = []
 cur_branch_idx = 0  # current running branch, init 0 / every state has a branch_idx
 max_branch_idx = 0  # increment when create new branch
+multi_branch = True
 
 class Dut_Branch:
     def __init__(self, iv_term_dict, iv_term_dict_default, constraints):
@@ -607,11 +608,14 @@ def async_one_step(sim, dut):
                 st.branch_cond.append(~cond_curr)  # record this as false
             else:
                 assert(maybe_true and maybe_false)
-                dut.create_branch() # increment max_branch_idx, must before st.clone()
-                passthrough = st.clone()
-                passthrough.branch_cond.append(cond_curr)
-                st.branch_cond.append(~cond_curr)
-                _all_states.append(passthrough)
+                if multi_branch:
+                    dut.create_branch() # increment max_branch_idx, must before st.clone()
+                    passthrough = st.clone()
+                    passthrough.branch_cond.append(cond_curr)
+                    st.branch_cond.append(~cond_curr)
+                    _all_states.append(passthrough)
+                else:
+                    st.branch_cond.append(cond_curr)    # single branch, if maybe_true and maybe_false all true, always satisfy condition
                 
                 
             
