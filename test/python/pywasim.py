@@ -203,6 +203,7 @@ class SignalProxy:
             iv_nr = self.dut.simulator.var(self.name)
             if self.dut.ts.is_input_var(iv_nr):
                 iv_dict = self.dut.simulator.convert({self.name : iv})
+                self.dut.iv_term_dict.update(iv_dict)
                 self.dut.iv_term_dict_default.update(iv_dict)
             else:
                 raise ValueError(f"No such input variable '{self.name}'.")
