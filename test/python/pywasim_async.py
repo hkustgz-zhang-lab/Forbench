@@ -2,6 +2,7 @@ import os
 import sys
 import inspect
 import ast
+import copy
 from functools import wraps
 
 script_path = os.path.realpath(__file__)
@@ -319,8 +320,8 @@ class async_simulator(object):
             # it should also be debuggable
             # maybe dump waveform
             print(f"<Error branch: {cur_branch_idx}>")
-            for cond in self._state_ptr.branch_cond:
-                print(f"Error path conditions: {cond}")
+            # for cond in self._state_ptr.branch_cond:
+            #     print(f"Error path conditions: {cond}")
             raise AssertionError('check_valid failed')
             print("check_valid failed")
             return False
@@ -336,6 +337,7 @@ class async_simulator(object):
 
     def wait_cycle(self, num:int = 1):
         assert(self._state_ptr)
+        if(num == 0): return
         assert(num > 0)
         self._state_ptr.await_cond = await_condition(cycle = num)
         
@@ -426,6 +428,57 @@ class pywasim_local_state(object):
                         # in sim.wait_cond(...), you should not immediately
                         # interpret variables
                         self.local['sim'].dut._do_not_interpret_var = True
+
+                # new: need to handle func call like reset(sim, dut), directly inline the def func() to self.coroutine.funbody
+                # now we can use sim.wait in def func(), but not support sim.wait in if else / while loop yet
+                if isinstance(expr.value.func, ast.Name):
+                    global_env = {**globals(), **getattr(sys.modules[__name__], "_extra_globals", {})}
+                    func_name = expr.value.func.id
+                    func_obj = global_env.get(func_name, None)
+                    # print(func_name)
+                    if inspect.isfunction(func_obj):
+                        # get func source code, and parse it to ast
+                        try:
+                            src = inspect.getsource(func_obj)
+                            parsed = ast.parse(src)
+                            func_def = next(n for n in parsed.body if isinstance(n, ast.FunctionDef))
+                        except Exception:
+                            print("Warning: cannot get source code of function", func_name)
+                        else:
+                            # create param map
+                            param_map = {}
+                            for idx, arg_node in enumerate(expr.value.args):
+                                arg_val = arg_node
+                                # If it is a constant, you can directly use ast.Constant
+                                if isinstance(arg_val, ast.Constant):
+                                    param_map[func_def.args.args[idx].arg] = copy.deepcopy(arg_val)
+                                else:
+                                    # If it is a variable or expression, keep it as Name/expression AST
+                                    param_map[func_def.args.args[idx].arg] = arg_val
+
+                            body_copy = copy.deepcopy(func_def.body)
+                            # substitute parameters with arguments
+                            class ParamReplacer(ast.NodeTransformer):
+                                def __init__(self, param_map):
+                                    self.param_map = param_map
+                                def visit_Name(self, node):
+                                    if node.id in self.param_map:
+                                        return self.param_map[node.id]
+                                    return node
+
+                            replacer = ParamReplacer(param_map)
+                            body_copy = [replacer.visit(stmt) for stmt in body_copy]
+
+                            # insert into funbody
+                            # print("old:", self.coroutine.funbody)
+                            # print("body_copy:", body_copy)
+                            self.coroutine.funbody[self.pc+1:self.pc+1] = body_copy
+                            # print("new:", self.coroutine.funbody)
+
+                            self.local['sim']._set_stateptr(None)
+                            self.local['sim'].dut._do_not_interpret_var = False
+                            self.pc += 1
+                            return
         
         if isinstance(self.coroutine.funbody[self.pc], ast.Return):
             ret = self.coroutine.funbody[self.pc]
