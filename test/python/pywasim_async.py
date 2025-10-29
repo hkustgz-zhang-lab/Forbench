@@ -307,7 +307,7 @@ class async_simulator(object):
     def set_var(self, name, width:int):
         return self.dut.simulator.set_var(width, name)
 
-    def check_valid(self, expr):
+    def check_assertion(self, expr):    # check_valid
         assert (self._state_ptr)
         print('<solver call>')
         # we can use this func to simplify the expr first
@@ -322,10 +322,10 @@ class async_simulator(object):
             print(f"<Error branch: {cur_branch_idx}>")
             # for cond in self._state_ptr.branch_cond:
             #     print(f"Error path conditions: {cond}")
-            raise AssertionError('check_valid failed')
-            print("check_valid failed")
+            raise AssertionError('sim.check_assertion failed')
+            print("sim.check_assertion failed")
             return False
-        print("check_valid pass")
+        print("sim.check_assertion pass")
         return True        
         
     def _set_stateptr(self, ptr):

@@ -47,7 +47,7 @@ def wb_cmp(delay, addr, exp_data):
     dut.wb_stb_i.value_def =  1
     dut.wb_cyc_i.value_def =  1
     sim.wait_cond(dut.wb_ack_o.value == 1)
-    sim.check_valid(dut.wb_dat_o.value == exp_data)
+    sim.check_assertion(dut.wb_dat_o.value == exp_data)
     sim.wait_cycle()
     dut.wb_adr_i.unset_def()
     dut.wb_we_i .unset_def()
@@ -165,7 +165,7 @@ def run1(sim, dut, pywasim):  # program internal registers
     wb_read(1, RXR)
     qq = dut.wb_dat_o.value
     print("RXR qq:", dut.wb_dat_o.value)
-    # sim.check_valid(qq == 0xa5)
+    # sim.check_assertion(qq == 0xa5)
 
     # read data from slave
     wb_write(1, CR, 0x20)
@@ -178,7 +178,7 @@ def run1(sim, dut, pywasim):  # program internal registers
     wb_read(1, RXR)
     qq = dut.wb_dat_o.value
     print("RXR qq:", dut.wb_dat_o.value)
-    # sim.check_valid(qq == 0xa5)
+    # sim.check_assertion(qq == 0xa5)
 
     # read data from slave
     wb_write(1, CR, 0x20)
@@ -222,7 +222,7 @@ def run1(sim, dut, pywasim):  # program internal registers
     
     # slave should have send NACK
     q = dut.wb_dat_o.value
-    sim.check_valid(q[7] == 1)
+    sim.check_assertion(q[7] == 1)
 
     # read data from slave
     wb_write(1, CR, 0x40)

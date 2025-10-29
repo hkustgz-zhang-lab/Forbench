@@ -14,7 +14,7 @@ def run1(sim, dut, pywasim):
 
     # wait condition, check data_out
     sim.wait_cond(dut.valid_o.value == 1)
-    sim.check_valid(data_in == dut.data_out.value)
+    sim.check_assertion(data_in == dut.data_out.value)
     
     
 dut = pywasim.Dut('../../design/pywasim-test/fifo.btor2')

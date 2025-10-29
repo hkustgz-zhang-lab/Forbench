@@ -7,7 +7,7 @@ def run1(sim, dut, pywasim):  #
     dut.b.value = 'b0'
     print("run1")
     sim.wait_cycle()
-    sim.check_valid(dut.out1.value == pywasim.zero_extend(sim.get_var('a0'),1) + pywasim.zero_extend(sim.get_var('b0'),1))
+    sim.check_assertion(dut.out1.value == pywasim.zero_extend(sim.get_var('a0'),1) + pywasim.zero_extend(sim.get_var('b0'),1))
 
 # alwasys block 2
 @pywasim.register_task
@@ -16,7 +16,7 @@ def run2(sim, dut, pywasim):  #
     dut.d.value = 'd0'
     print("run2")
     sim.wait_cycle()
-    sim.check_valid(dut.out2.value == pywasim.zero_extend(sim.get_var('c0'),1) + pywasim.zero_extend(sim.get_var('d0'),1))
+    sim.check_assertion(dut.out2.value == pywasim.zero_extend(sim.get_var('c0'),1) + pywasim.zero_extend(sim.get_var('d0'),1))
 
 dut = pywasim.Dut('../../design/pywasim-test/adder_async.btor2')
 sim = pywasim.async_simulator(dut)

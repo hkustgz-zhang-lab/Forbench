@@ -17,7 +17,7 @@ def run1(sim, dut, pywasim):  #
     # pull start down, wait condition
     dut.start.value_def = 0
     sim.wait_cond((dut.valid.value == 1))
-    sim.check_valid(dut.quotient.value == sim.get_var('dividend') / sim.get_var('divisor'))
+    sim.check_assertion(dut.quotient.value == sim.get_var('dividend') / sim.get_var('divisor'))
 
 dut = pywasim.Dut('../../design/pywasim-test/div.btor2')
 sim = pywasim.async_simulator(dut)

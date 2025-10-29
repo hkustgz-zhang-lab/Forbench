@@ -6,7 +6,7 @@ def run1(sim, dut, pywasim):  #
     dut.b.value = 'b0'
     dut.start.value = 1
     sim.wait_cond(dut.valid.value == 1)
-    sim.check_valid(dut.result.value == pywasim.zero_extend(sim.get_var('a0'),3)*pywasim.zero_extend(sim.get_var('b0'),8))
+    sim.check_assertion(dut.result.value == pywasim.zero_extend(sim.get_var('a0'),3)*pywasim.zero_extend(sim.get_var('b0'),8))
 
 # note if the design allows restart
 # this will not work
