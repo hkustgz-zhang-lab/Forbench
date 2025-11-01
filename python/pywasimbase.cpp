@@ -6,6 +6,8 @@
 #include "framework/ts.h"
 #include "frontend/btor2_encoder.h"
 #include "framework/symsim.h"
+#include "framework/symsim_branch.h"
+#include "framework/state_simplify.h"
 
 // CHECK url: 
 //   https://cs.brown.edu/~jwicks/boost/libs/python/doc/tutorial/doc/html/python/object.html
@@ -92,6 +94,7 @@ namespace wasim {
   struct StateRef;
   struct TransSys;
   struct Symsimulator;
+  struct Symsimbranch;
 
 
   struct SolverRef {
@@ -111,6 +114,7 @@ namespace wasim {
 
     protected:
       friend class TransSys; // TransSys can use the same solver to build multiple transys
+      friend NodeRef* expr_simplify_ite(const NodeRef*, const boost::python::list&, const SolverRef*);
       smt::SmtSolver solver;
   }; // end of SolverRef
 
@@ -529,6 +533,9 @@ namespace wasim {
     friend struct StateRef;
     friend struct TransSys;
     friend struct Symsimulator;
+    friend struct Symsimbranch;
+    friend NodeRef* expr_simplify_ite(const NodeRef*, const boost::python::list&, const SolverRef*);
+    
     smt::SmtSolver solver;
     smt::Term node;
 
@@ -1117,6 +1124,7 @@ namespace wasim {
     }
     
     friend struct Symsimulator;
+    friend struct Symsimbranch;
 
     protected:
       smt::SmtSolver solver;
@@ -1331,6 +1339,7 @@ namespace wasim {
     }
 
       friend struct Symsimulator;
+      friend struct Symsimbranch;
     protected:
       std::shared_ptr<TransitionSystem> sptr;
 
@@ -1486,6 +1495,23 @@ namespace wasim {
       return new NodeRef(sptr->interpret_state_expr_on_curr_frame(expr->node), sptr->get_solver());
     }
 
+    NodeRef * interpret_input_and_state_expr_on_curr_frame(NodeRef * expr, const boost::python::dict & iv_term_dict) const {
+      smt::UnorderedTermMap iv_map;
+      boost::python::list items = iv_term_dict.items();
+      for(ssize_t i = 0; i < len(items); ++i) {
+          boost::python::object key = items[i][0];
+          boost::python::object value = items[i][1];
+          boost::python::extract<NodeRef *> k(key);
+          boost::python::extract<NodeRef *> v(value);
+
+          if(k.check() && v.check())
+            iv_map.emplace(k()->node, v()->node);
+          else
+            throw PyWASIMException(PyExc_RuntimeError, "Expecting Term->Term map in interpret_input_and_state_expr_on_curr_frame");
+      }
+      return new NodeRef(sptr->interpret_input_and_state_expr_on_curr_frame(expr->node, iv_map), sptr->get_solver());
+    }
+
     /// do simulation
     void sim_one_step() { sptr->sim_one_step(); }
 
@@ -1536,6 +1562,245 @@ namespace wasim {
     protected:
       std::shared_ptr<SymbolicSimulator> sptr;
   };
+
+  /* TODO : simulator */
+  struct Symsimbranch {
+
+    Symsimbranch(TransSys * ts) {
+      sptr = std::make_shared<SymbolicSimulatorBranch>(*(ts->sptr), ts->sptr->get_solver());
+    }
+
+    void create_origin_branch(){
+      sptr-> create_origin_branch();
+    }
+    void create_branch(size_t branch_idx){
+      sptr-> create_branch(branch_idx);
+    }
+    void finish_branch(size_t branch_idx){
+      sptr-> finish_branch(branch_idx);
+    }
+
+    /// get the length of the trace
+    unsigned tracelen() const { return sptr->tracelen(); }
+    /// collect all assumptions on each frame
+    boost::python::list all_assumptions(size_t branch_idx) const {
+      boost::python::list ret;
+      for (const auto & a : sptr->all_assumptions(branch_idx))
+        ret.append(new NodeRef(a, sptr->get_solver()));
+      return ret;
+    }
+    /// collect all interpretations of assumptions on each frame
+    boost::python::list all_assumption_interp(size_t branch_idx) const {
+      boost::python::list ret;
+      for (const auto & s : sptr->all_assumption_interp(branch_idx))
+        ret.append(s);
+      return ret;
+    }
+    /// get the term for a variable
+    NodeRef *var(const std::string & n) const {
+      return new NodeRef(sptr->var(n), sptr->get_solver());
+    }
+    /// get the term for name n, then use the current symbolic
+    /// variable assignment to substitute all variables in it
+    /// if it contains input variable, use the most recent input
+    /// variable assignment as well
+    NodeRef * cur(const std::string & n, size_t branch_idx) const {
+      return new NodeRef(sptr->cur(n, branch_idx), sptr->get_solver());
+    }
+    /// print the current state variable assignment
+    void print_current_step() const { sptr->print_current_step(); }
+    /// get the assumptions (collected from all previous steps)
+    void print_current_step_assumptions() const {sptr->print_current_step_assumptions();}
+
+    /// a shortcut to create symbolic variables/concrete values in a map
+    boost::python::dict convert(const boost::python::dict & d) const {
+      assignment_type vdict;
+      boost::python::list items = d.items();
+      for(ssize_t i = 0; i < len(items); ++i) {
+          boost::python::object key = items[i][0];
+          boost::python::object value = items[i][1];
+          boost::python::extract<std::string> k(key);
+          boost::python::extract<int> v(value);
+          boost::python::extract<std::string> v_str(value);
+          boost::python::extract<NodeRef *> v_node(value);
+
+          if (!k.check())
+            throw PyWASIMException(PyExc_RuntimeError, "Expecting str->int/str/NodeRef map in convert");
+
+          if (v.check())
+            vdict.emplace(k(), v());
+          else if (v_str.check())
+            vdict.emplace(k(), v_str());
+          else if (v_node.check())
+            vdict.emplace(k(), v_node()->node );
+          else
+              throw PyWASIMException(PyExc_RuntimeError, "Expecting str->int/str/NodeRef map in convert");
+      }
+      auto ret_smt = sptr->convert(vdict);
+      boost::python::dict ret;
+      for (const auto & sv_update : ret_smt) {
+        NodeRef * k = new NodeRef(sv_update.first, sptr->get_solver());
+        NodeRef * v = new NodeRef(sv_update.second, sptr->get_solver());
+        ret[k] = v;
+      }
+      return ret;
+    }
+
+    /// goto the previous simulation step
+    void backtrack(size_t branch_idx) { sptr->backtrack(branch_idx); }
+
+    /// use the given variable assignment to initialize
+    void init(const boost::python::dict & d) {
+      smt::UnorderedTermMap var_assignment;
+      boost::python::list items = d.items();
+      for(ssize_t i = 0; i < len(items); ++i) {
+          boost::python::object key = items[i][0];
+          boost::python::object value = items[i][1];
+          boost::python::extract<NodeRef *> k(key);
+          boost::python::extract<NodeRef *> v(value);
+          if(k.check() && v.check())
+            var_assignment.emplace(k()->node, v()->node);
+          else
+            throw PyWASIMException(PyExc_RuntimeError, "Expecting Term->Term map in init");
+      }
+      sptr->init(var_assignment);
+    }
+
+    void free_init(const boost::python::dict & d) {
+      smt::UnorderedTermMap var_assignment;
+      boost::python::list items = d.items();
+      for(ssize_t i = 0; i < len(items); ++i) {
+          boost::python::object key = items[i][0];
+          boost::python::object value = items[i][1];
+          boost::python::extract<NodeRef *> k(key);
+          boost::python::extract<NodeRef *> v(value);
+          if(k.check() && v.check())
+            var_assignment.emplace(k()->node, v()->node);
+          else
+            throw PyWASIMException(PyExc_RuntimeError, "Expecting Term->Term map in init");
+      }
+      sptr->free_init(var_assignment);
+    }
+
+
+    /// re-assign the current state
+    void set_current_state(const StateRef * s, size_t branch_idx) { sptr->set_current_state(*(s->sptr.get()), branch_idx); }
+    /// set the input variable values before simulating next step
+    ///  (and also set some assumptions before the next step)
+    void set_input(const boost::python::dict & iv, const boost::python::list & asmpts, size_t branch_idx) {
+      smt::UnorderedTermMap invar_assign;
+      smt::TermVec pre_assumptions;
+
+      boost::python::list items = iv.items();
+      for(ssize_t i = 0; i < len(items); ++i) {
+          boost::python::object key = items[i][0];
+          boost::python::object value = items[i][1];
+          boost::python::extract<NodeRef *> k(key);
+          boost::python::extract<NodeRef *> v(value);
+
+          if(k.check() && v.check())
+            invar_assign.emplace(k()->node, v()->node);
+          else
+            throw PyWASIMException(PyExc_RuntimeError, "Expecting Term->Term map in set_input");
+      }
+      for (ssize_t i = 0; i < len(asmpts); ++i) {
+        boost::python::extract<NodeRef *> key(asmpts[i]);
+        if (key.check())
+          pre_assumptions.push_back(key()->node);
+        else
+          throw PyWASIMException(PyExc_RuntimeError, "Expecting list of NodeRef in set_input");
+      }
+      sptr->set_input(invar_assign, pre_assumptions, branch_idx);
+    }
+    /// undo the input setting
+    /// usage: set_input -> sim_one_step --> (a new state) -> backtrack ->
+    /// undo_set_input
+    void undo_set_input(size_t branch_idx) { sptr->undo_set_input(branch_idx); }
+
+    /// similar to cur(), but will check no reference to the input variables
+    NodeRef * interpret_state_expr_on_curr_frame(NodeRef * expr, size_t branch_idx) const {
+      return new NodeRef(sptr->interpret_state_expr_on_curr_frame(expr->node, branch_idx), sptr->get_solver());
+    }
+
+    NodeRef * interpret_input_and_state_expr_on_curr_frame(NodeRef * expr, const boost::python::dict & iv_term_dict, size_t branch_idx) const {
+      smt::UnorderedTermMap iv_map;
+      boost::python::list items = iv_term_dict.items();
+      for(ssize_t i = 0; i < len(items); ++i) {
+          boost::python::object key = items[i][0];
+          boost::python::object value = items[i][1];
+          boost::python::extract<NodeRef *> k(key);
+          boost::python::extract<NodeRef *> v(value);
+
+          if(k.check() && v.check())
+            iv_map.emplace(k()->node, v()->node);
+          else
+            throw PyWASIMException(PyExc_RuntimeError, "Expecting Term->Term map in interpret_input_and_state_expr_on_curr_frame");
+      }
+      return new NodeRef(sptr->interpret_input_and_state_expr_on_curr_frame(expr->node, iv_map, branch_idx), sptr->get_solver());
+    }
+
+    /// do simulation
+    void sim_one_step(size_t branch_idx) { sptr->sim_one_step(branch_idx); }
+
+    /// get the set of all X variables
+    boost::python::list  get_Xs() const { 
+      boost::python::list ret;
+      for (const auto & x : sptr->get_Xs())
+        ret.append(new NodeRef(x, sptr->get_solver()));
+      return ret; 
+    }
+
+    /// get (a copy of) the current state
+    StateRef * get_curr_state(const boost::python::list & assumptions, size_t branch_idx)  {
+      smt::TermVec assumpts;
+      for(ssize_t i = 0; i < len(assumptions); ++i)  {
+        boost::python::extract<NodeRef *>  aspt(assumptions[i]);
+        if(aspt.check())
+          assumpts.push_back(aspt()->node);
+        else
+          throw PyWASIMException(PyExc_RuntimeError, "Expecting list of NodeRef in get_curr_state");
+      }
+      StateAsmpt ret_state = sptr->get_curr_state(assumpts, branch_idx);
+      return new StateRef( ret_state.get_sv(), ret_state.get_assumptions(), ret_state.get_assumption_interpretations(), sptr->get_solver() );
+    }
+
+    /// a shortcut to create a variable
+    NodeRef * set_var(int bitwdth, const std::string & vname) {
+      try {
+        return new NodeRef(sptr->set_var(bitwdth, vname), sptr->get_solver());
+      } catch(...) {
+        throw PyWASIMException(PyExc_RuntimeError, "Variable name `" + vname + "` already exists");
+      }
+    }
+
+    NodeRef * get_var(const std::string &vname) {
+      try {
+        auto t = sptr->get_solver()->get_symbol(vname);
+        return new NodeRef(t, sptr->get_solver());
+      } catch(...) {
+        throw PyWASIMException(PyExc_RuntimeError, "Variable name `" + vname + "` does not exists");
+      }
+    }
+
+    /// get solver
+    SolverRef * get_solver() const { return new SolverRef(sptr->get_solver()); }
+
+    protected:
+      std::shared_ptr<SymbolicSimulatorBranch> sptr;
+  };
+  
+  /* state_simplify */
+  NodeRef * expr_simplify_ite(const NodeRef * expr, const boost::python::list & assumptions, const SolverRef * solver){
+    smt::TermVec assumpts;
+    for(ssize_t i = 0; i < len(assumptions); ++i)  {
+      boost::python::extract<NodeRef *>  aspt(assumptions[i]);
+      if(aspt.check())
+        assumpts.push_back(aspt()->node);
+      else
+        throw PyWASIMException(PyExc_RuntimeError, "Expecting list of NodeRef in get_curr_state");
+    }
+    return new NodeRef(expr_simplify_ite(expr->node, assumpts, solver->solver), solver->solver);
+  }
 
   /* TODO : tracemgr */
 
@@ -1820,6 +2085,8 @@ BOOST_PYTHON_MODULE(pywasimbase)
     .def("undo_set_input", &Symsimulator::undo_set_input)
 
     .def("interpret_state_expr_on_curr_frame", &Symsimulator::interpret_state_expr_on_curr_frame, return_value_policy<manage_new_object>() )
+    .def("interpret_input_and_state_expr_on_curr_frame", &Symsimulator::interpret_input_and_state_expr_on_curr_frame, return_value_policy<manage_new_object>() )
+    
     .def("sim_one_step", &Symsimulator::sim_one_step)
     .def("get_Xs", &Symsimulator::get_Xs)
     .def("get_curr_state", &Symsimulator::get_curr_state, return_value_policy<manage_new_object>())
@@ -1828,5 +2095,38 @@ BOOST_PYTHON_MODULE(pywasimbase)
     .def("get_solver", &Symsimulator::get_solver, return_value_policy<manage_new_object>())
   ;
 
+  class_<Symsimbranch>("Symsimbranch", init<TransSys *>())
+    .def("create_origin_branch", &Symsimbranch::create_origin_branch)
+    .def("create_branch", &Symsimbranch::create_branch)
+    .def("finish_branch", &Symsimbranch::finish_branch)
+    .def("tracelen", &Symsimbranch::tracelen)
+    .def("all_assumptions", &Symsimbranch::all_assumptions)
+    .def("all_assumption_interp", &Symsimbranch::all_assumption_interp)
+
+    .def("var", &Symsimbranch::var, return_value_policy<manage_new_object>())
+    .def("cur", &Symsimbranch::cur, return_value_policy<manage_new_object>())
+    .def("print_current_step", &Symsimbranch::print_current_step)
+    .def("print_current_step_assumptions", &Symsimbranch::print_current_step_assumptions)
+    .def("convert", &Symsimbranch::convert)
+    .def("backtrack", &Symsimbranch::backtrack)
+    .def("init", &Symsimbranch::init)
+    .def("free_init", &Symsimbranch::free_init)
+    .def("set_current_state", &Symsimbranch::set_current_state)
+    .def("set_input", &Symsimbranch::set_input)
+    .def("undo_set_input", &Symsimbranch::undo_set_input)
+
+    .def("interpret_state_expr_on_curr_frame", &Symsimbranch::interpret_state_expr_on_curr_frame, return_value_policy<manage_new_object>() )
+    .def("interpret_input_and_state_expr_on_curr_frame", &Symsimbranch::interpret_input_and_state_expr_on_curr_frame, return_value_policy<manage_new_object>() )
+    
+    .def("sim_one_step", &Symsimbranch::sim_one_step)
+    .def("get_Xs", &Symsimbranch::get_Xs)
+    .def("get_curr_state", &Symsimbranch::get_curr_state, return_value_policy<manage_new_object>())
+    .def("set_var", &Symsimbranch::set_var, return_value_policy<manage_new_object>())
+    .def("get_var", &Symsimbranch::get_var, return_value_policy<manage_new_object>())
+    .def("get_solver", &Symsimbranch::get_solver, return_value_policy<manage_new_object>())
+  ;
+
+  // public func
+  def("expr_simplify_ite", (NodeRef* (*)(const NodeRef*, const boost::python::list&, const SolverRef*)) &wasim::expr_simplify_ite, return_value_policy<manage_new_object>());
 
 }

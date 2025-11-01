@@ -2,7 +2,7 @@ from pywasim import Dut, zero_extend
 
 
 if __name__ == "__main__":
-    dut = Dut('../../design/pywasim-test/adder.btor2')    # create dut
+    dut = Dut('../../design/pywasim-test/adder2.btor2')    # create dut
 
     # init dut
     dut.set_init()              # init state value
@@ -22,6 +22,9 @@ if __name__ == "__main__":
 
     # next cycle
     dut.print_curr_sv()
+    dut.a.value = "a3"
+    dut.b.value = "b3"
+    a3 = dut.a.value
     out = dut.out.value
     # assert
-    dut.check_assertion(out == zero_extend(a1, 1) + zero_extend(b2, 1))
+    dut.check_assertion(out == zero_extend(a1, 1) + zero_extend(b2, 1) + zero_extend(a3, 1))

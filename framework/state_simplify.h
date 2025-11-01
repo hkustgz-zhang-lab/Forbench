@@ -47,6 +47,12 @@ smt::Term expr_simplify_ite(const smt::Term & expr,
                             const smt::TermVec & assumptions,
                             const smt::SmtSolver & solver);
 
+// try to simplify by replacing according to the submap
+// and perform constant progation
+smt::Term replacement_and_constant_propagation(const smt::Term & expr,
+                                               const smt::UnorderedTermMap submap,
+                                               const smt::SmtSolver & solver);
+
 // this function will try some heuristics to simplify state update functions in s
 void state_simplify_xvar(StateAsmpt & s,
                          const smt::UnorderedTermSet & set_of_xvar,
