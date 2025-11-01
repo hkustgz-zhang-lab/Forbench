@@ -1,0 +1,29 @@
+The root problem: we are emulating the python execution, which causes a lot of differences.
+
+if is_sat(...):
+  wait_cycle(1)    How to deal with it?  Can we deal with it?
+
+multiple coroutine invocation ...
+
+copy -> deepcopy when fork a coroutine
+
+what if you deepcopy a list of terms?
+
+global variables:  if you call another coroutine in one coroutine, how to implicitly pass the global variables
+
+debug switch on/off
+
+assertion failure mode (raise or not? cex or not)
+
+CEX generation (& partial model generation)
+
+add_current_state_assumption
+
+add_global_assumption
+
+simplify state expressions based on branch conditions
+
+state dump and load
+
+start from a certain state
+
