@@ -114,7 +114,8 @@ namespace wasim {
 
     protected:
       friend class TransSys; // TransSys can use the same solver to build multiple transys
-      friend NodeRef* expr_simplify_ite(const NodeRef*, const boost::python::list&, const SolverRef*);
+      // I suggest we do not rely on overloading in this case, just give another name
+      friend NodeRef* expr_simplify_ite_wrap(const NodeRef*, const boost::python::list&, const SolverRef*);
       smt::SmtSolver solver;
   }; // end of SolverRef
 
@@ -534,7 +535,7 @@ namespace wasim {
     friend struct TransSys;
     friend struct Symsimulator;
     friend struct Symsimbranch;
-    friend NodeRef* expr_simplify_ite(const NodeRef*, const boost::python::list&, const SolverRef*);
+    friend NodeRef* expr_simplify_ite_wrap(const NodeRef*, const boost::python::list&, const SolverRef*);
     
     smt::SmtSolver solver;
     smt::Term node;
@@ -1790,14 +1791,14 @@ namespace wasim {
   };
   
   /* state_simplify */
-  NodeRef * expr_simplify_ite(const NodeRef * expr, const boost::python::list & assumptions, const SolverRef * solver){
+  NodeRef * expr_simplify_ite_wrap(const NodeRef * expr, const boost::python::list & assumptions, const SolverRef * solver){
     smt::TermVec assumpts;
     for(ssize_t i = 0; i < len(assumptions); ++i)  {
       boost::python::extract<NodeRef *>  aspt(assumptions[i]);
       if(aspt.check())
         assumpts.push_back(aspt()->node);
       else
-        throw PyWASIMException(PyExc_RuntimeError, "Expecting list of NodeRef in get_curr_state");
+        throw PyWASIMException(PyExc_RuntimeError, "Expecting list of NodeRef in expr_simplify_ite");
     }
     return new NodeRef(expr_simplify_ite(expr->node, assumpts, solver->solver), solver->solver);
   }
@@ -2127,6 +2128,6 @@ BOOST_PYTHON_MODULE(pywasimbase)
   ;
 
   // public func
-  def("expr_simplify_ite", (NodeRef* (*)(const NodeRef*, const boost::python::list&, const SolverRef*)) &wasim::expr_simplify_ite, return_value_policy<manage_new_object>());
+  def("expr_simplify_ite", &wasim::expr_simplify_ite_wrap, return_value_policy<manage_new_object>());
 
 }
