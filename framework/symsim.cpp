@@ -42,7 +42,7 @@ smt::Term SymbolicSimulator::cur(const std::string & n) const
   if (!_expr_only_sv(expr)) {
     assert(history_choice_.size() != 0);
     assert(!history_choice_.back().UsedInSim_);
-    smt::UnorderedTermMap iv_mapping = history_choice_.back().var_assign_;
+    const smt::UnorderedTermMap & iv_mapping = history_choice_.back().var_assign_;
     auto subs_mapping = sv_mapping;  // make a copy
     subs_mapping.insert(iv_mapping.begin(), iv_mapping.end());
     expr = solver_->substitute(expr, subs_mapping);

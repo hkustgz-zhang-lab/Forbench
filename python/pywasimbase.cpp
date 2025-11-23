@@ -1571,18 +1571,19 @@ namespace wasim {
       sptr = std::make_shared<SymbolicSimulatorBranch>(*(ts->sptr), ts->sptr->get_solver());
     }
 
-    void create_origin_branch(){
-      sptr-> create_origin_branch();
-    }
-    void create_branch(size_t branch_idx){
-      sptr-> create_branch(branch_idx);
+    size_t fork_branch(size_t branch_idx){
+      return sptr-> fork_branch(branch_idx);
     }
     void finish_branch(size_t branch_idx){
       sptr-> finish_branch(branch_idx);
     }
 
+    void add_assumption_interpreted(size_t branch_idx, NodeRef * asmpt, const std::string & interp) {
+      sptr->add_assumption_interpreted(branch_idx, asmpt->node, interp);
+    }
+
     /// get the length of the trace
-    unsigned tracelen() const { return sptr->tracelen(); }
+    unsigned tracelen(size_t idx) const { return sptr->tracelen(idx); }
     /// collect all assumptions on each frame
     boost::python::list all_assumptions(size_t branch_idx) const {
       boost::python::list ret;
@@ -1609,9 +1610,28 @@ namespace wasim {
       return new NodeRef(sptr->cur(n, branch_idx), sptr->get_solver());
     }
     /// print the current state variable assignment
-    void print_current_step() const { sptr->print_current_step(); }
+    void print_current_step(size_t idx) const { sptr->print_current_step(idx); }
     /// get the assumptions (collected from all previous steps)
-    void print_current_step_assumptions() const {sptr->print_current_step_assumptions();}
+    void print_current_step_assumptions(size_t idx) const {sptr->print_current_step_assumptions(idx);}
+    /// print the current state variable assignment
+    void print_current_step_all_branches() const { sptr->print_current_step_all_branches(); }
+    /// get the assumptions (collected from all previous steps)
+    void print_current_step_assumptions_all_branches() const {sptr->print_current_step_assumptions_all_branches();}
+
+    boost::python::dict create_input_Xvars(const std::string & n) {
+      auto ret_smt = sptr->create_input_Xvars(n);
+      boost::python::dict ret;
+      for (const auto & sv_update : ret_smt) {
+        NodeRef * k = new NodeRef(sv_update.first, sptr->get_solver());
+        NodeRef * v = new NodeRef(sv_update.second, sptr->get_solver());
+        ret[k] = v;
+      }
+      return ret;
+    }
+
+    bool is_Xvar(NodeRef * t) {
+      return sptr->is_Xvar(t->node);
+    }
 
     /// a shortcut to create symbolic variables/concrete values in a map
     boost::python::dict convert(const boost::python::dict & d) const {
@@ -1833,6 +1853,14 @@ BOOST_PYTHON_MODULE(pywasimbase)
   class_<smt::Op>("SmtOp")
     .def("__repr__", &smt::Op::to_string )
   ;
+
+  /* HZ: There is a caveat for NodeRef in a Python dictionary
+  because we overload __hash__ and __eq__
+  So two terms that are merged in Boolector/Bitwuzla will have the same hash
+  and __eq__ will return an object that is treated as True,
+  so it seems that two terms merged in Boolector/Bitwuzla will also be merged
+  in the dictionary/set. (Which is probably the desired behavior)
+   */
 
   class_<NodeRef>("NodeRef")
     .def("is_symbol", &NodeRef::is_symbol)
@@ -2097,17 +2125,20 @@ BOOST_PYTHON_MODULE(pywasimbase)
   ;
 
   class_<Symsimbranch>("Symsimbranch", init<TransSys *>())
-    .def("create_origin_branch", &Symsimbranch::create_origin_branch)
-    .def("create_branch", &Symsimbranch::create_branch)
+    .def("fork_branch", &Symsimbranch::fork_branch)
     .def("finish_branch", &Symsimbranch::finish_branch)
     .def("tracelen", &Symsimbranch::tracelen)
     .def("all_assumptions", &Symsimbranch::all_assumptions)
     .def("all_assumption_interp", &Symsimbranch::all_assumption_interp)
-
+    .def("add_assumption_interpreted", &Symsimbranch::add_assumption_interpreted)
     .def("var", &Symsimbranch::var, return_value_policy<manage_new_object>())
     .def("cur", &Symsimbranch::cur, return_value_policy<manage_new_object>())
     .def("print_current_step", &Symsimbranch::print_current_step)
     .def("print_current_step_assumptions", &Symsimbranch::print_current_step_assumptions)
+    .def("print_current_step_all_branches", &Symsimbranch::print_current_step_all_branches)
+    .def("print_current_step_assumptions_all_branches", &Symsimbranch::print_current_step_assumptions_all_branches)
+    .def("create_input_Xvars", &Symsimbranch::create_input_Xvars)
+    .def("is_Xvar", &Symsimbranch::is_Xvar)
     .def("convert", &Symsimbranch::convert)
     .def("backtrack", &Symsimbranch::backtrack)
     .def("init", &Symsimbranch::init)
