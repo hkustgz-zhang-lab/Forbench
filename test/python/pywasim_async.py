@@ -24,13 +24,13 @@ class Dut_Branch:
         self.iv_term_dict = {}  # a term->term map (after convert)
         self.iv_term_dict_default = {} # a term->term map (after convert)
         self.constraints = []
-        self.finished = False
+        #finished should not be associated with a branch
+
     def clone(self):
         ret = Dut_Branch()
         ret.iv_term_dict = self.iv_term_dict.copy()
         ret.iv_term_dict_default = self.iv_term_dict_default.copy()
         ret.constraints = self.constraints.copy()
-        ret.finished = self.finished
         return ret
 
 class Dut:
@@ -75,10 +75,6 @@ class Dut:
         assert (new_branch_id == len(self.branch_list)-1)
         return new_branch_id
 
-    def finish_branch(self, branch_idx):
-        self.branch_list[branch_idx].finished = True
-        self.simulator.finish_branch(branch_idx)
-    
     def num_of_branches(self):
         return len(self.branch_list)
     
@@ -99,17 +95,13 @@ class Dut:
             print("property:", prop_i)
             return prop_i
 
-    def _create_iv_dict(self):
-        assert len(self.branch_list) != 0
-        # set X inputvars to each branch and update default inputvars of different branches
-        for branch in self.branch_list:
-            if branch.finished:
-                continue
-            # should not use the same X inputvars for all branches
-            branch.iv_term_dict = self.simulator.create_input_Xvars("") # returns a map: string -> term map
-            # you can also call `_merge_dict_replace_X`` here, but the result would be the same anyway
-            # because iv_term_dict are all Xs
-            branch.iv_term_dict.update(branch.iv_term_dict_default)
+    def _create_iv_dict(self, branch_idx):
+        branch = self.branch_list[branch_idx]
+        # should not use the same X inputvars for all branches
+        branch.iv_term_dict = self.simulator.create_input_Xvars("") # returns a map: string -> term map
+        # you can also call `_merge_dict_replace_X`` here, but the result would be the same anyway
+        # because iv_term_dict are all Xs
+        branch.iv_term_dict.update(branch.iv_term_dict_default)
 
     def set_init(self, d = {}):
         if self.initialized:
@@ -118,7 +110,7 @@ class Dut:
         self.initialized = True
         var_dict = self.simulator.convert(d)
         self.simulator.init(var_dict)
-        self._create_iv_dict()          # create new inputvars
+        self._create_iv_dict(branch_idx = 0)          # create new inputvars
 
     def free_init(self, d = {}):
         if self.initialized:
@@ -127,7 +119,7 @@ class Dut:
         self.initialized = True
         var_dict = self.simulator.convert(d)
         self.simulator.free_init(var_dict)
-        self._create_iv_dict()          # create new inputvars
+        self._create_iv_dict(branch_idx = 0)          # create new inputvars
 
     def set_constraint(self, constr):
         assert (self.curr_branch_idx is not None)
@@ -151,30 +143,28 @@ class Dut:
         return retd
 
 
-    def step(self, num = 1, asmpt = []):
+    def step(self, branch_idx, num = 1, asmpt = []):
         for _ in range(num):
-            for branch_idx, branch in enumerate(self.branch_list):
-                if branch.finished:
-                    continue
-                # iv_term_dict_default will replace iv_term_dict, only if iv_term_dict has an X there
-                iv_term_dict = self._merge_dict_replace_X(branch.iv_term_dict, branch.iv_term_dict_default)
-                #branch.iv_term_dict.update(branch.iv_term_dict_default) # FIXME: this does not look correct
-                self.simulator.set_input(iv_term_dict, asmpt, branch_idx)
-                self.simulator.sim_one_step(branch_idx)
-            print (f'<cycle:{self.step_cycle()-1}>')
-        self._create_iv_dict()
+            branch = self.branch_list[branch_idx]
+            # iv_term_dict_default will replace iv_term_dict, only if iv_term_dict has an X there
+            iv_term_dict = self._merge_dict_replace_X(branch.iv_term_dict, branch.iv_term_dict_default)
+            #branch.iv_term_dict.update(branch.iv_term_dict_default) # FIXME: this does not look correct
+            self.simulator.set_input(iv_term_dict, asmpt, branch_idx)
+            self.simulator.sim_one_step(branch_idx)
+            print (f'<dut.step br#{branch_idx} cycle:{self.step_cycle(branch_idx)-1}>')
+        self._create_iv_dict(branch_idx)
     
     # not use
-    def _back_step(self, num = 1):
-        assert (False) # TODO: we need to decide if this is for all branches or just one
+    def _back_step(self, branch_idx, num = 1):
         for _ in range(num):
-            for branch_idx, branch in enumerate(self.branch_list):
-                self.simulator.backtrack(branch_idx)
-                self.simulator.undo_set_input(branch_idx)
-            self._create_iv_dict()  # create new inputvars
+            branch = self.branch_list[branch_idx]
+            self.simulator.backtrack(branch_idx)
+            self.simulator.undo_set_input(branch_idx)
+        self._create_iv_dict(branch_idx)  # create new inputvars only after all these steps
 
-    def step_cycle(self):
-        return self.simulator.tracelen(0)    # return origin branch tracelen
+    def step_cycle(self, branch_idx):
+        """Currently """
+        return self.simulator.tracelen(branch_idx)    # return origin branch tracelen
 
     def check_prop(self):
         assert (False)
@@ -289,10 +279,9 @@ class SignalProxy:
 
     @property
     def value(self):
-        # HZ: TODO
-        if self.dut.step_cycle() == 0:
-            raise Exception('Combinational circuits also need initialization (free_init)')
         assert (self.dut.curr_branch_idx is not None)
+        if self.dut.step_cycle(self.dut.curr_branch_idx) == 0:
+            raise Exception('Combinational circuits also need initialization (free_init)')
         curr_branch_idx = self.dut.curr_branch_idx
         iv_term_dict = self.dut._get_curr_branch_iv_term_dict()
 
@@ -449,6 +438,7 @@ class pywasim_local_state(object):
         self.await_cond = None  # await condition could be clock(n)
         # new for branch
         self.branch_idx = 0 # initially these coroutines are just for the first branch
+        self.finished = False
         
     def clone(self, branch_idx): # it returns a passthrough object
         # this does not coy the associated branch, you must copy separately and associate them with the arg
@@ -460,12 +450,14 @@ class pywasim_local_state(object):
         ret.local = self.local.copy()
         # new for branch
         ret.branch_idx = branch_idx
+        assert (not self.finished)
+        ret.finished = False
         return ret
     
     def is_finished(self):
-        return self.local['sim'].dut.branch_list[self.branch_idx].finished
+        return self.finished
     def set_finished(self):
-        self.local['sim'].dut.finish_branch(self.branch_idx)
+        self.finished = True
         
     def return_value(self):
         return self.retval
@@ -661,15 +653,14 @@ def async_one_step(sim, dut):
         return
 
     any_runnable = True
-    all_finished = True
 
     while any_runnable:
         any_runnable = False
+        all_finished = True
         for idx,st in enumerate(_all_states):  # list of pywasim_local_state
             # print(f'<coroutine #{idx}>')
             curr_branch_idx = st.branch_idx
             if st.is_finished():
-                assert (dut.branch_list[curr_branch_idx].finished)
                 continue
 
             #else
@@ -685,11 +676,11 @@ def async_one_step(sim, dut):
                 
             # execute the corountine until we need to wait
             while st.await_cond is None and not st.is_finished():
-                st.step()
+                st.step() # this runs the Python code in the coroutine
                 any_runnable = True
 
     if all_finished:
-        print('<finished>')
+        print('<all finished>')
         sim.finish()
         return
     
@@ -698,21 +689,35 @@ def async_one_step(sim, dut):
     # then we will need branch before step
 
     print('<dut.step>')
-    dut.step()  # this is calling the C++ to step the DUT
+    stepped_branches = set()
+    for idx,st in enumerate(_all_states):
+        if st.is_finished():
+            continue
+        curr_branch_idx = st.branch_idx
+        if curr_branch_idx in stepped_branches:
+            continue # in case two states ---> same branch
+        dut.step(curr_branch_idx)  # this eventually calls C++ to step all branches of DUT
+        stepped_branches.add(curr_branch_idx)
+    # this is essentially BFS
+    # in the future, you may configure to try DFS etc.
 
     # dut.print_curr_sv()
     # next go through _all_states and decrease cycle or check condition
     for idx,st in enumerate(_all_states):
+        if st.is_finished():
+            continue
+
         print(f'<coroutine #{idx} post>')
         curr_branch_idx = st.branch_idx
         # assert (st.await_cond) # is not None
         # as we append passthrough to _all_states, its await_condition may be None 
         if st.await_cond is None:
-            continue # just skip them
+            continue # just skip them (the newly added `passthrough` will be skipped)
         # print (st.await_cond)
         if st.await_cond.cycle:
             st.await_cond.cycle -= 1
             if st.await_cond.cycle <= 0:
+                assert (st.await_cond.cycle == 0)
                 st.await_cond = None # remove its blocker so it can continue
                 continue
         elif st.await_cond.cond is not None:
@@ -736,7 +741,9 @@ def async_one_step(sim, dut):
             else:
                 assert(maybe_true and maybe_false)
                 br_idx = dut.fork_branch(curr_branch_idx) # increment max_branch_idx, must before st.clone()
+                # st.clone clears passthrough.await_cond
                 passthrough = st.clone(branch_idx = br_idx) # link the state with the branch
+                assert (passthrough.await_cond is None)
                 dut.simulator.add_assumption_interpreted(br_idx, cond_curr, "branch cond")
                 dut.simulator.add_assumption_interpreted(curr_branch_idx, ~cond_curr, "~branch cond")
                 #passthrough.branch_cond.append(cond_curr)
