@@ -143,7 +143,7 @@ class Dut:
         return retd
 
 
-    def step(self, branch_idx, num = 1, asmpt = []):
+    def _step(self, branch_idx, num = 1, asmpt = []):
         for _ in range(num):
             branch = self.branch_list[branch_idx]
             # iv_term_dict_default will replace iv_term_dict, only if iv_term_dict has an X there
@@ -696,7 +696,7 @@ def async_one_step(sim, dut):
         curr_branch_idx = st.branch_idx
         if curr_branch_idx in stepped_branches:
             continue # in case two states ---> same branch
-        dut.step(curr_branch_idx)  # this eventually calls C++ to step all branches of DUT
+        dut._step(curr_branch_idx)  # this eventually calls C++ to step all branches of DUT
         stepped_branches.add(curr_branch_idx)
     # this is essentially BFS
     # in the future, you may configure to try DFS etc.
