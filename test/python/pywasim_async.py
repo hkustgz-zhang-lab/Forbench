@@ -13,55 +13,74 @@ sys.path.append(build_dir)
 from pywasimbase import *
 # TransSys, Simsimulator
 
-_all_coroutine = []
+_all_coroutine = [] # List of `pywasim_coroutine`
 _all_states = []
-cur_branch_idx = 0  # current running branch, init 0 / every state has a branch_idx
-max_branch_idx = 0  # increment when create new branch
-multi_branch = True
+# HZ: I don't like the use of these global vars...
+# cur_branch_idx = 0  # current running branch, init 0 / every state has a branch_idx
 
 class Dut_Branch:
-    def __init__(self, iv_term_dict, iv_term_dict_default, constraints):
-        self.iv_term_dict = dict(iv_term_dict)
-        self.iv_term_dict_default = dict(iv_term_dict_default)
-        self.constraints = list(constraints)
-
+    def __init__(self):
+        """will create a copy of all the arguments"""
+        self.iv_term_dict = {}  # a term->term map (after convert)
+        self.iv_term_dict_default = {} # a term->term map (after convert)
+        self.constraints = []
         self.finished = False
+    def clone(self):
+        ret = Dut_Branch()
+        ret.iv_term_dict = self.iv_term_dict.copy()
+        ret.iv_term_dict_default = self.iv_term_dict_default.copy()
+        ret.constraints = self.constraints.copy()
+        ret.finished = self.finished
+        return ret
 
 class Dut:
+    # DUT now is having multiple branches
     def __init__(self, btorname):
         self.ts = TransSys(btorname)
-        self.simulator = Symsimbranch(self.ts)
+        self.simulator = Symsimbranch(self.ts) # this is the C++ class
         self.solver = self.simulator.get_solver()
         
         self._do_not_interpret_var = False # if true, will not return SignalProxy
         self.inputvars_list = self.ts.inputvars()
         self.statevars_list = self.ts.statevars()
 
-        self.iv_term_dict = {}
-        self.iv_term_dict_default = {}
-        self.constraints = []
+        #self.iv_term_dict = {}
+        #self.iv_term_dict_default = {}
+        #self.constraints = []
 
         self.initialized = False
         # self.prop = self._get_property()
 
         self.combination = (len(self.statevars_list) == 0)    # comb -> True, seq -> False
 
-        self.branch_list = []
+        self.branch_list = [Dut_Branch()] # list of Dut_Branch. Initially there is one branch
+        self.curr_branch_idx = None # this must be set by sim, before it can call many functions
 
     # func for branch
-    def create_origin_branch(self):
-        self.branch_list.append(Dut_Branch(self.iv_term_dict, self.iv_term_dict_default, self.constraints))
-        self.simulator.create_origin_branch()
+    def _set_curr_branch(self, idx):
+        self.curr_branch_idx = idx
 
-    def create_branch(self):
-        self.branch_list.append(Dut_Branch(self.branch_list[cur_branch_idx].iv_term_dict, self.branch_list[cur_branch_idx].iv_term_dict_default, self.branch_list[cur_branch_idx].constraints))
-        global max_branch_idx
-        max_branch_idx += 1
-        self.simulator.create_branch(cur_branch_idx)
+    def _get_curr_branch_iv_term_dict(self):
+        assert (self.curr_branch_idx is not None)
+        return self.branch_list[self.curr_branch_idx].iv_term_dict
 
-    def finish_branch(self):
-        self.branch_list[cur_branch_idx].finished = True
-        self.simulator.finish_branch(cur_branch_idx)
+    def _get_curr_branch_iv_term_dict_default(self):
+        assert (self.curr_branch_idx is not None)
+        return self.branch_list[self.curr_branch_idx].iv_term_dict_default
+
+    # None user-facing functions must be provided by branch_idx
+    def fork_branch(self, branch_idx):
+        self.branch_list.append(self.branch_list[branch_idx].clone())
+        new_branch_id = self.simulator.fork_branch(branch_idx)
+        assert (new_branch_id == len(self.branch_list)-1)
+        return new_branch_id
+
+    def finish_branch(self, branch_idx):
+        self.branch_list[branch_idx].finished = True
+        self.simulator.finish_branch(branch_idx)
+    
+    def num_of_branches(self):
+        return len(self.branch_list)
     
     # not use
     def _get_property(self):
@@ -82,70 +101,84 @@ class Dut:
 
     def _create_iv_dict(self):
         assert len(self.branch_list) != 0
-        # create same X inputvars for all branches
-        iv_dict = {}
-        idx = str(self.step_cycle())
-        for iv in self.inputvars_list:
-            iv_dict[iv.to_string()] = iv.to_string()+ "X" + idx
-        self.iv_term_dict = self.simulator.convert(iv_dict)
-
-        # set X inputvars to each branch and update different branch default inputvars
+        # set X inputvars to each branch and update default inputvars of different branches
         for branch in self.branch_list:
             if branch.finished:
                 continue
-            branch.iv_term_dict = self.iv_term_dict
+            # should not use the same X inputvars for all branches
+            branch.iv_term_dict = self.simulator.create_input_Xvars("") # returns a map: string -> term map
+            # you can also call `_merge_dict_replace_X`` here, but the result would be the same anyway
+            # because iv_term_dict are all Xs
             branch.iv_term_dict.update(branch.iv_term_dict_default)
 
     def set_init(self, d = {}):
         if self.initialized:
             raise RuntimeError("You cannot initialize simulator twice")
-        assert len(self.branch_list) == 0
+        assert len(self.branch_list) == 1
         self.initialized = True
         var_dict = self.simulator.convert(d)
         self.simulator.init(var_dict)
-        self.create_origin_branch()     # create origin branch
         self._create_iv_dict()          # create new inputvars
 
     def free_init(self, d = {}):
         if self.initialized:
             raise RuntimeError("You cannot initialize simulator twice")
-        assert len(self.branch_list) == 0
+        assert len(self.branch_list) == 1
         self.initialized = True
         var_dict = self.simulator.convert(d)
         self.simulator.free_init(var_dict)
-        self.create_origin_branch()     # create origin branch
         self._create_iv_dict()          # create new inputvars
 
     def set_constraint(self, constr):
-        self.branch_list[cur_branch_idx].constraints.append(constr)
+        assert (self.curr_branch_idx is not None)
+        self.branch_list[self.curr_branch_idx].constraints.append(constr)
     
-    def unset_constraint(self, constr):
-        del self.branch_list[cur_branch_idx].constraints[constr]
-
     def clear_constraint(self):
-        self.branch_list[cur_branch_idx].constraints = []
+        assert (self.curr_branch_idx is not None)
+        self.branch_list[self.curr_branch_idx].constraints = []
+
+    def _merge_dict_replace_X(self, iv_term_dict, iv_term_dict_default):
+        # check every k,v in iv_term_dict_default, if the corresponding value in iv_term_dict is X then replace it
+        # else don't replace
+        retd = iv_term_dict.copy()
+        for k,v in iv_term_dict_default.items():
+            if k in retd:
+                old_v = retd[k]
+                if self.simulator.is_Xvar(old_v):
+                    retd[k] = v
+            else:
+                retd[k] = v
+        return retd
+
 
     def step(self, num = 1, asmpt = []):
         for _ in range(num):
             for branch_idx, branch in enumerate(self.branch_list):
                 if branch.finished:
                     continue
-                branch.iv_term_dict.update(branch.iv_term_dict_default)
-                self.simulator.set_input(branch.iv_term_dict, asmpt, branch_idx)
+                # iv_term_dict_default will replace iv_term_dict, only if iv_term_dict has an X there
+                iv_term_dict = self._merge_dict_replace_X(branch.iv_term_dict, branch.iv_term_dict_default)
+                #branch.iv_term_dict.update(branch.iv_term_dict_default) # FIXME: this does not look correct
+                self.simulator.set_input(iv_term_dict, asmpt, branch_idx)
                 self.simulator.sim_one_step(branch_idx)
-            self._create_iv_dict()
             print (f'<cycle:{self.step_cycle()-1}>')
+        self._create_iv_dict()
     
     # not use
-    def back_step(self):
-        self.simulator.backtrack(cur_branch_idx)
-        self.simulator.undo_set_input(cur_branch_idx)
-        self._create_iv_dict()  # create new inputvars
+    def _back_step(self, num = 1):
+        assert (False) # TODO: we need to decide if this is for all branches or just one
+        for _ in range(num):
+            for branch_idx, branch in enumerate(self.branch_list):
+                self.simulator.backtrack(branch_idx)
+                self.simulator.undo_set_input(branch_idx)
+            self._create_iv_dict()  # create new inputvars
 
     def step_cycle(self):
-        return self.simulator.tracelen()    # return origin branch tracelen
+        return self.simulator.tracelen(0)    # return origin branch tracelen
 
     def check_prop(self):
+        assert (False)
+        # TODO: this is also problematic, not using local assumptions etc.
         cur_prop = self.simulator.interpret_state_expr_on_curr_frame(self.prop, cur_branch_idx)
         assumptions = self.simulator.all_assumptions(cur_branch_idx)
         print(f"property: {cur_prop.to_string()}")
@@ -168,13 +201,25 @@ class Dut:
 
     def check_sat(self, asst, asmpts):
         print('dut.check_sat')
-        asmpts_all = self.simulator.all_assumptions(cur_branch_idx)
+        assert (self.curr_branch_idx is not None)
+        asmpts_all = self.simulator.all_assumptions(self.curr_branch_idx)
         asmpts_all.extend(asmpts)
-        asmpts_all.extend(self.branch_list[cur_branch_idx].constraints)
+        asmpts_all.extend(self.branch_list[self.curr_branch_idx].constraints)
         asmpts_all.append(asst)
         return self.solver.check_sat_assuming(asmpts_all)
-
+    
     def check_assertion(self, assertion):
+        # TODO
+        assert (False)
+        if res:
+            print("check assertion result: fail!")
+        else:
+            print("check assertion result: pass!")
+        return not res
+
+    def _check_assertion(self, assertion):
+        # should not be called directly by the user
+        # because it is not using an branch condition/branch local constraints
         print(f"assertion: {assertion.to_string()}")
 
         self.solver.push()
@@ -189,11 +234,19 @@ class Dut:
             print("check assertion result: pass!")
         return not res
 
+    # TODO: user should be allowed to either print one branch or print all...
+    
     def print_curr_sv(self):
-        self.simulator.print_current_step() # print all running branch info
-
+        assert (self.curr_branch_idx is not None)
+        self.simulator.print_current_step(self.curr_branch_idx) # print all running branch info
     def print_curr_assumptions(self):
-        self.simulator.print_current_step_assumptions() # print all running branch info
+        assert (self.curr_branch_idx is not None)
+        self.simulator.print_current_step_assumptions(self.curr_branch_idx) # print all running branch info
+
+    def print_curr_sv_all_branches(self):
+        self.simulator.print_current_step_all_branches() # print all running branch info
+    def print_curr_assumptions_all_branches(self):
+        self.simulator.print_current_step_assumptions_all_branches() # print all running branch info
 
     def __getattr__(self, signal_name):
         v = self.ts.lookup(signal_name) # add a check to make sure the signal_name do exist
@@ -236,31 +289,37 @@ class SignalProxy:
 
     @property
     def value(self):
+        # HZ: TODO
+        if self.dut.step_cycle() == 0:
+            raise Exception('Combinational circuits also need initialization (free_init)')
+        assert (self.dut.curr_branch_idx is not None)
+        curr_branch_idx = self.dut.curr_branch_idx
+        iv_term_dict = self.dut._get_curr_branch_iv_term_dict()
+
         # if you have assigned, get the one you assigned
-        nf = self.dut.simulator.var(self.name)
-        if nf in self.dut.iv_term_dict:
-            return self.dut.branch_list[cur_branch_idx].iv_term_dict[nf]
+        nf = self.dut.simulator.var(self.name) # name to SMT term
+        if nf in iv_term_dict:
+            print(f"Warning: expr(dut.{self.name}.value) contains current inputvars; Modifying related inputvars afterward may cause (dut.{self.name}.value) changed.")
+            return iv_term_dict[nf]
         
         # get current term of signal
         try:
-            signal_nr = self.dut.simulator.interpret_state_expr_on_curr_frame(nf, cur_branch_idx)   # only have state vars
+            signal_nr = self.dut.simulator.interpret_state_expr_on_curr_frame(nf, curr_branch_idx)   # only have state vars
             return signal_nr
         except Exception:
-            if(self.dut.combination):
-                signal_nr = nf.substitute(self.dut.branch_list[cur_branch_idx].iv_term_dict)
-            else:
-                signal_nr = self.dut.simulator.interpret_input_and_state_expr_on_curr_frame(nf, self.dut.branch_list[cur_branch_idx].iv_term_dict, cur_branch_idx)  # have state vars and input vars
-                print(f"Warning: expr(dut.{self.name}.value) contains current inputvars; Modifying related inputvars afterward may cause (dut.{self.name}.value) changed.")
+            signal_nr = self.dut.simulator.interpret_input_and_state_expr_on_curr_frame(nf, iv_term_dict, curr_branch_idx)  # have state vars and input vars
+            print(f"Warning: expr(dut.{self.name}.value) contains current inputvars; Modifying related inputvars afterward may cause (dut.{self.name}.value) changed.")
             return signal_nr
 
     @value.setter
     def value(self, iv):
         # set input_signal <-> value
+        iv_term_dict = self.dut._get_curr_branch_iv_term_dict()
         try:
-            iv_nr = self.dut.simulator.var(self.name)
+            iv_nr = self.dut.simulator.var(self.name) # name to SMT term
             if self.dut.ts.is_input_var(iv_nr):
                 iv_dict = self.dut.simulator.convert({self.name : iv})
-                self.dut.branch_list[cur_branch_idx].iv_term_dict.update(iv_dict)
+                iv_term_dict.update(iv_dict)
             else:
                 raise ValueError(f"No such input variable '{self.name}'.")
         except Exception as e:
@@ -272,26 +331,38 @@ class SignalProxy:
 
     @value_def.setter
     def value_def(self, iv):
+        iv_term_dict = self.dut._get_curr_branch_iv_term_dict()
+        iv_term_dict_default = self.dut._get_curr_branch_iv_term_dict_default()
         try:
             iv_nr = self.dut.simulator.var(self.name)
             if self.dut.ts.is_input_var(iv_nr):
                 iv_dict = self.dut.simulator.convert({self.name : iv})
-                self.dut.branch_list[cur_branch_idx].iv_term_dict.update(iv_dict)
-                self.dut.branch_list[cur_branch_idx].iv_term_dict_default.update(iv_dict)
+                iv_term_dict_default.update(iv_dict)
+                # will only replace the value in iv_term_dict if iv_term_dict has an X there
+                iv_term_dict = self.dut._merge_dict_replace_X(iv_term_dict, iv_dict)
+                self.dut.branch_list[self.dut.curr_branch_idx].iv_term_dict = iv_term_dict
             else:
                 raise ValueError(f"No such input variable '{self.name}'.")
         except Exception as e:
             raise ValueError(f"No such variable '{self.name}'.", e)
         
     def unset_def(self):
-        iv_nr = self.dut.simulator.var(self.name)
-        if iv_nr not in self.dut.branch_list[cur_branch_idx].iv_term_dict_default:
-            raise ValueError(f"No such default assignment to variable '{self.name}'.")
-        del self.dut.branch_list[cur_branch_idx].iv_term_dict_default[iv_nr]
-        # reset to X signal
-        xvar = self.dut.simulator.get_var(self.name + "X" + str(self.dut.step_cycle()))
-        self.dut.branch_list[cur_branch_idx].iv_term_dict.update({iv_nr : xvar})
+        iv_term_dict = self.dut._get_curr_branch_iv_term_dict()
+        iv_term_dict_default = self.dut._get_curr_branch_iv_term_dict_default()
+        try:
+            iv_nr = self.dut.simulator.var(self.name)
+        except Exception as e:
+            raise ValueError(f"No such variable '{self.name}'.", e)
 
+        if iv_nr not in iv_term_dict_default:
+            raise ValueError(f"No such default assignment to variable '{self.name}'.")
+        def_val = iv_term_dict_default[iv_nr]
+        del iv_term_dict_default[iv_nr]
+        # reset to X signal only if iv_term_dict has the same X there
+        if hash(iv_term_dict[iv_nr]) == hash(def_val):
+            xvar_dict = self.dut.simulator.create_input_Xvars(self.name)
+            xvar = list(xvar_dict.items())[0][1]
+            iv_term_dict[iv_nr] = xvar
 
 
 class async_simulator(object):
@@ -307,21 +378,20 @@ class async_simulator(object):
     def set_var(self, name, width:int):
         return self.dut.simulator.set_var(width, name)
 
-    def check_assertion(self, expr):    # check_valid
+    def check_assertion(self, expr, asmpts = []):    # check_valid
         assert (self._state_ptr)
+        curr_branch_idx = self._state_ptr.branch_idx
         print('<solver call>')
         # we can use this func to simplify the expr first
         # simplify_expr = self.dut.expr_simplify_ite(expr, self._state_ptr.branch_cond)
         # can_sat = self.dut.check_sat(~simplify_expr, self._state_ptr.branch_cond)
-        can_sat = self.dut.check_sat(~expr, self._state_ptr.branch_cond)
+        can_sat = self.dut.check_sat(~expr, asmpts)
         print('<end solver call>')
         if can_sat:
             # the behavior here should be controllable
             # it should also be debuggable
             # maybe dump waveform
-            print(f"<Error branch: {cur_branch_idx}>")
-            # for cond in self._state_ptr.branch_cond:
-            #     print(f"Error path conditions: {cond}")
+            print(f"<Error branch: {curr_branch_idx}>")
             raise AssertionError('sim.check_assertion failed')
             print("sim.check_assertion failed")
             return False
@@ -372,46 +442,48 @@ class pywasim_local_state(object):
     def __init__(self, coroutine, args, kwargs):
         self.coroutine = coroutine
         self.pc = -1
-        self.finished = False
         self.retval = None
         self.args = args
         self.kwargs = kwargs
         self.local = {}
         self.await_cond = None  # await condition could be clock(n)
-        self.branch_cond = []
-
         # new for branch
-        self.branch_idx = 0
+        self.branch_idx = 0 # initially these coroutines are just for the first branch
         
-    def clone(self): # it returns a passthrough object
+    def clone(self, branch_idx): # it returns a passthrough object
+        # this does not coy the associated branch, you must copy separately and associate them with the arg
         ret = pywasim_local_state(self.coroutine, [], {}) # you don't need to clone args and kwargs because it will not branch at invocation
         ret.pc = self.pc
-        ret.finished = self.finished
         ret.retval = self.retval
         ret.await_cond = None  # you don't need to deepcopy this
         # this is because when you branch, one thread will have its await set to None to let it continue
         ret.local = self.local.copy()
-        ret.branch_cond = self.branch_cond.copy()
-
         # new for branch
-        ret.branch_idx = max_branch_idx
-
+        ret.branch_idx = branch_idx
         return ret
+    
+    def is_finished(self):
+        return self.local['sim'].dut.branch_list[self.branch_idx].finished
+    def set_finished(self):
+        self.local['sim'].dut.finish_branch(self.branch_idx)
         
     def return_value(self):
         return self.retval
     
     def step(self):
-        if self.finished:
+        """This function will handle the execution of Python code"""
+        if self.is_finished():
             print ('<coroutine finished>')
             return
         if self.pc >= len(self.coroutine.funbody):
             print ('<coroutine finished>')
-            self.finished = True
+            self.set_finished()
             return
                     
         print(f'<coroutine.pc:{self.pc}>')
         self.local['sim']._set_stateptr(self)
+        self.local['sim'].dut._set_curr_branch(self.branch_idx)
+
         if isinstance(self.coroutine.funbody[self.pc], ast.Expr):
             expr = self.coroutine.funbody[self.pc]
             if isinstance(expr.value, ast.Call):
@@ -476,6 +548,7 @@ class pywasim_local_state(object):
                             # print("new:", self.coroutine.funbody)
 
                             self.local['sim']._set_stateptr(None)
+                            self.local['sim'].dut._set_curr_branch(None)
                             self.local['sim'].dut._do_not_interpret_var = False
                             self.pc += 1
                             return
@@ -484,7 +557,7 @@ class pywasim_local_state(object):
             ret = self.coroutine.funbody[self.pc]
             self.retval = eval(ret.value, {},  self.local)
             print ('<coroutine finished>')
-            self.finished = True
+            self.set_finished()
         else:
             # sim.await will set await_cond
             tmp_stmt = ast.Module(body=[self.coroutine.funbody[self.pc]], type_ignores=[])
@@ -492,6 +565,7 @@ class pywasim_local_state(object):
             exec(compile(tmp_stmt, "<ast>", "exec"), {**globals(), **getattr(sys.modules[__name__], "_extra_globals", {})}, self.local) # allow to get global env in test file
             
         self.local['sim']._set_stateptr(None)
+        self.local['sim'].dut._set_curr_branch(None)
         self.local['sim'].dut._do_not_interpret_var = False
         self.pc += 1
         
@@ -513,7 +587,7 @@ class pywasim_local_state(object):
         # but this does not create execution branches
         
     def parse_arg(self):
-        assert (self.pc < 0 and not self.finished)
+        assert (self.pc < 0) #you cannot call is_finished here
         # parse its args, set the local variables
         func_node = self.coroutine.astnodes.body[0]
         assert isinstance(func_node, ast.FunctionDef)
@@ -543,6 +617,7 @@ class pywasim_local_state(object):
                 
 # create pointers
 class pywasim_coroutine(object):
+    """ The coroutine class, when invoked, will update `_all_states` to register an invocation """
     def __init__(self, lines):
         self.lines = lines.split(sep = '\n')
         self.astnodes = ast.parse(lines)
@@ -552,9 +627,11 @@ class pywasim_coroutine(object):
         
     def invoke(self, *args, **kwargs):
         _all_states.append(pywasim_local_state( coroutine = self, args = args, kwargs = kwargs))
+        _all_states[-1].parse_arg() # parse the argument at the time we invoke it
         return _all_states[-1]  # you can use sim.wait_task() on this
 
 def register_task(func):
+    """register a function as a coroutine. Will update `_all_coroutine`"""
     code = inspect.getsource(func)
     _all_coroutine.append(pywasim_coroutine(lines = code))
     l = len(_all_coroutine)
@@ -586,41 +663,28 @@ def async_one_step(sim, dut):
     any_runnable = True
     all_finished = True
 
-    global cur_branch_idx  # use global var
-
     while any_runnable:
         any_runnable = False
         for idx,st in enumerate(_all_states):  # list of pywasim_local_state
             # print(f'<coroutine #{idx}>')
-            cur_branch_idx = st.branch_idx
-            if st.finished:
-                if dut.branch_list[cur_branch_idx].finished:    # states in same branch all finished
-                    continue
-
-                # check if all states (with same cur_branch_idx) finished
-                for st_i in _all_states:
-                    if st_i.branch_idx == cur_branch_idx and not st_i.finished:
-                        break   # found one not finished
-                else:
-                    dut.finish_branch() # all states with this branch_idx finished
-                    print(f'<branch #{cur_branch_idx} finished>')
-                # dut.finish_branch()
+            curr_branch_idx = st.branch_idx
+            if st.is_finished():
+                assert (dut.branch_list[curr_branch_idx].finished)
                 continue
+
             #else
             print(f'<coroutine #{idx}>')
             all_finished = False
 
-            if st.pc < 0:
-                # parse its args, set the local variables
-                st.parse_arg()
+            assert (st.pc >= 0)
             if st.await_cond is not None and st.await_cond.execthread is not None:
               # if the task it waits has finished
               # we can remove its blocker so that it can continue
-              if st.await_cond.execthread.finished:
+              if st.await_cond.execthread.is_finished():
                 st.await_cond = None
                 
             # execute the corountine until we need to wait
-            while st.await_cond is None and not st.finished:
+            while st.await_cond is None and not st.is_finished():
                 st.step()
                 any_runnable = True
 
@@ -628,15 +692,19 @@ def async_one_step(sim, dut):
         print('<finished>')
         sim.finish()
         return
+    
+    # TODO: branch before step. This maybe needed if we want 
+    # if symexpr == condition
+    # then we will need branch before step
 
-    # TODO: branch before step
     print('<dut.step>')
-    dut.step()
+    dut.step()  # this is calling the C++ to step the DUT
+
     # dut.print_curr_sv()
     # next go through _all_states and decrease cycle or check condition
     for idx,st in enumerate(_all_states):
         print(f'<coroutine #{idx} post>')
-        cur_branch_idx = st.branch_idx
+        curr_branch_idx = st.branch_idx
         # assert (st.await_cond) # is not None
         # as we append passthrough to _all_states, its await_condition may be None 
         if st.await_cond is None:
@@ -650,25 +718,31 @@ def async_one_step(sim, dut):
         elif st.await_cond.cond is not None:
             # check if this condition can be true
             # check if this condition can be false
-            cond_curr = dut.simulator.interpret_input_and_state_expr_on_curr_frame(st.await_cond.cond, dut.iv_term_dict, cur_branch_idx)
-            maybe_true = dut.check_sat(cond_curr, st.branch_cond )
-            maybe_false = dut.check_sat(~cond_curr, st.branch_cond )
+            dut._set_curr_branch(curr_branch_idx)
+            iv_term_dict = dut._get_curr_branch_iv_term_dict()
+            cond_curr = dut.simulator.interpret_input_and_state_expr_on_curr_frame(st.await_cond.cond, iv_term_dict, curr_branch_idx)
+            maybe_true = dut.check_sat(cond_curr, [] )
+            maybe_false = dut.check_sat(~cond_curr, [] )
+            dut._set_curr_branch(None)
+
             print('branch:',maybe_true, maybe_false)
             if maybe_true and not maybe_false:
                 st.await_cond = None
-                st.branch_cond.append(cond_curr)
+                dut.simulator.add_assumption_interpreted(curr_branch_idx, cond_curr, "branch cond")
+                # st.branch_cond.append(cond_curr) #HZ: we can get rid of this, branch_cond will be inserted into dut.simulator
             elif maybe_false and not maybe_true:
-                st.branch_cond.append(~cond_curr)  # record this as false
+                dut.simulator.add_assumption_interpreted(curr_branch_idx, ~cond_curr, "~branch cond")
+                #st.branch_cond.append(~cond_curr)  # record this as false
             else:
                 assert(maybe_true and maybe_false)
-                if multi_branch:
-                    dut.create_branch() # increment max_branch_idx, must before st.clone()
-                    passthrough = st.clone()
-                    passthrough.branch_cond.append(cond_curr)
-                    st.branch_cond.append(~cond_curr)
-                    _all_states.append(passthrough)
-                else:
-                    st.branch_cond.append(cond_curr)    # single branch, if maybe_true and maybe_false all true, always satisfy condition
+                br_idx = dut.fork_branch(curr_branch_idx) # increment max_branch_idx, must before st.clone()
+                passthrough = st.clone(branch_idx = br_idx) # link the state with the branch
+                dut.simulator.add_assumption_interpreted(br_idx, cond_curr, "branch cond")
+                dut.simulator.add_assumption_interpreted(curr_branch_idx, ~cond_curr, "~branch cond")
+                #passthrough.branch_cond.append(cond_curr)
+                #st.branch_cond.append(~cond_curr)
+                _all_states.append(passthrough)
+
                 
                 
             
