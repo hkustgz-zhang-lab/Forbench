@@ -15,6 +15,7 @@ from pywasimbase import *
 
 _all_coroutine = [] # List of `pywasim_coroutine`
 _all_states = []
+_all_functions = {} # a name:str->ast map (so you don't need to re-parse functions)
 # HZ: I don't like the use of these global vars...
 # cur_branch_idx = 0  # current running branch, init 0 / every state has a branch_idx
 
@@ -359,6 +360,7 @@ class async_simulator(object):
         self._state_ptr = None # should point to a pywasim_local_state object
         self.dut = dut
         self.finished = False
+        self._allowed_waits = False # this will be turned on, only if we step onto such functions
 
     def get_var(self, name):
         return self.dut.simulator.get_var(name)
@@ -396,6 +398,8 @@ class async_simulator(object):
 
     def wait_cycle(self, num:int = 1):
         assert(self._state_ptr)
+        if not self._allowed_waits:
+            raise RuntimeError("sim.wait_cycle is not in a tracked function")
         if(num == 0): return
         assert(num > 0)
         self._state_ptr.await_cond = await_condition(cycle = num)
@@ -403,19 +407,27 @@ class async_simulator(object):
     def wait_task(self, task):
         assert(isinstance(task, pywasim_local_state))
         assert(self._state_ptr)
+        if not self._allowed_waits:
+            raise RuntimeError("sim.wait_task is not in a tracked function")
         self._state_ptr.await_cond = await_condition(execthread = task)        
         
     def wait_cond(self, cond):
         assert(self._state_ptr)
+        if not self._allowed_waits:
+            raise RuntimeError("sim.wait_cond is not in a tracked function")
         self._state_ptr.await_cond = await_condition(cond = cond)
         
     def wait_posedge(self, signal):
         assert(self._state_ptr)
+        if not self._allowed_waits:
+            raise RuntimeError("sim.wait_posedge is not in a tracked function")
         assert False # not implemented
         pass
         
     def wait_negedge(self, signal):
         assert(self._state_ptr)
+        if not self._allowed_waits:
+            raise RuntimeError("sim.wait_negedge is not in a tracked function")
         assert False # not implemented
         pass
         
@@ -427,27 +439,117 @@ class await_condition(object):
         self.execthread = execthread
     # you will need to test if this is ready
 
-class pywasim_local_state(object):
-    def __init__(self, coroutine, args, kwargs):
-        self.coroutine = coroutine
+class stackframe(object):
+    def __init__(self, localvars, func_def, code, args, kwargs):
+        # func_or_block == "func" or 'block' depends on if (func_def is None)
+        self.func_or_block = 'block' if func_def is None else 'func'
+
+        self.localvars  = localvars
         self.pc = -1
         self.retval = None
-        self.args = args
-        self.kwargs = kwargs
-        self.local = {}
+
+        self.code = code
+        assert(isinstance(self.code, list)) # it must be a list
+
+        self.func_def = func_def # should be assigned to coroutine.astnodes.body[0]
+        if func_def is not None:
+            self.parse_arg(args, kwargs)
+
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        for k, v in self.__dict__.items():
+            setattr(result, k, copy.copy(v))
+        return result
+
+
+    def get_curr_ast(self) -> ast.AST: # return the ast corresponding to current pc
+        assert(self.pc < len(self.code))
+        return self.code[self.pc]
+
+    def parse_arg(self, caller_args, caller_kwargs):
+        assert (self.pc < 0) #you cannot call is_finished here
+        # parse its args, set the local variables
+        assert isinstance(self.func_def, ast.FunctionDef)
+        args = [arg.arg for arg in self.func_def.args.args]
+        idx = 0
+        for arg in args:
+            if idx < len(caller_args):
+                self.localvars[arg] = caller_args[idx]
+            elif arg in caller_kwargs:
+                self.localvars[arg] = caller_kwargs[arg]
+                del caller_kwargs[arg]
+            else:
+                raise RuntimeError('no arg for ' + arg)
+            idx += 1
+        if idx < len(caller_args):
+            if self.func_def.args.vararg:
+                self.localvars[self.func_def.args.vararg] = caller_args[idx:]
+            else:
+                raise RuntimeError('too many arguments ' + caller_args[idx:])
+        if len(caller_kwargs):
+            if self.func_def.args.kwarg:
+                self.localvars[self.func_def.args.kwarg] = caller_kwargs
+            else:
+                raise RuntimeError('too many arguments ' + caller_kwargs)
+        self.pc = 0
+
+
+def _get_globals()->dict:
+    return {**globals(), **getattr(sys.modules[__name__], "_extra_globals", {})}
+
+def check_func_call(stmt:ast.AST) -> bool:
+    for node in ast.walk(stmt):
+        if isinstance(node, ast.Call):
+            return True
+    return False
+
+def need_to_trace(callast:ast.Call) -> bool:
+    for arg in callast.args:
+        if isinstance(arg, ast.Name):
+            if arg.id in ['sim','dut']:
+                return True
+    for kw in callast.keywords:
+        if isinstance(kw.value, ast.Name):
+            if kw.value.id in ['sim','dut']:
+                return True
+    return False
+
+def eval_args(callast:ast.Call, localvars): # return args and kwargs
+    global_env = _get_globals()
+    args = []
+    kwargs = {}
+    for arg in callast.args:
+        args.append( eval(arg, global_env, localvars) )
+    for kw in callast.keywords:
+        key = kw.arg
+        val = eval(kw.value, global_env, localvars)
+        kwargs[key]=val
+    return args, kwargs
+
+
+class pywasim_local_state(object):
+    def __init__(self, coroutine, initial_stackframe:stackframe):
+        self.coroutine = coroutine
+        self.current_frame = initial_stackframe
+        self.stack = [] # list of (targetList, stackframe)
         self.await_cond = None  # await condition could be clock(n)
+        self.retval = None
         # new for branch
         self.branch_idx = 0 # initially these coroutines are just for the first branch
         self.finished = False
+        self.sim = self.current_frame.localvars['sim']
+        # setup local vars etc
+        # self.current_frame.parse_arg(args, kwargs) no need to do it here, current_frame will invoke automatically
         
     def clone(self, branch_idx): # it returns a passthrough object
         # this does not coy the associated branch, you must copy separately and associate them with the arg
-        ret = pywasim_local_state(self.coroutine, [], {}) # you don't need to clone args and kwargs because it will not branch at invocation
-        ret.pc = self.pc
-        ret.retval = self.retval
-        ret.await_cond = None  # you don't need to deepcopy this
+        ret = pywasim_local_state(self.coroutine, self.current_frame) # you don't need to clone args and kwargs because it will not branch at invocation
+        ret.current_frame = copy.deepcopy(self.current_frame)  # we need a deep copy here
+        ret.stack = copy.deepcopy(self.stack)
+        ret.await_cond = None  # you don't need to deepcopy await_cond
         # this is because when you branch, one thread will have its await set to None to let it continue
-        ret.local = self.local.copy()
         # new for branch
         ret.branch_idx = branch_idx
         assert (not self.finished)
@@ -462,104 +564,146 @@ class pywasim_local_state(object):
     def return_value(self):
         return self.retval
     
+    def _return_encountered(self, stmt):
+        if stmt is None:
+            retval = None
+        else:
+            global_env = _get_globals()
+            retval = eval(stmt.value, global_env,  self.current_frame.localvars)
+        if len(self.stack):
+            # pop the stack
+            targets, self.current_frame = self.stack[-1]
+            for vname in targets:
+                self.current_frame.localvars[vname] = retval
+            del self.stack[-1]
+        else:
+            self.retval = retval
+            print ('<coroutine finished>')
+            self.set_finished()
+    
     def step(self):
         """This function will handle the execution of Python code"""
         if self.is_finished():
             print ('<coroutine finished>')
             return
-        if self.pc >= len(self.coroutine.funbody):
-            print ('<coroutine finished>')
-            self.set_finished()
+        assert (self.current_frame.pc < len(self.current_frame.code))
+        print(f'<coroutine.pc:{self.current_frame.pc} , stack size:{len(self.stack)}>')
+
+        self.sim._set_stateptr(self)
+        self.sim.dut._set_curr_branch(self.branch_idx)
+
+
+        stmt = self.current_frame.get_curr_ast()
+
+
+        func_def, call_ast, targets = self._detect_function_trace(stmt)
+        if func_def is not None: # this means we need to trace assert (func_def is not None)
+            # follow into the function call
+            self.stack.append((targets, self.current_frame))
+            args,kwargs = eval_args(call_ast, self.current_frame.localvars)
+            # EVAL val
+            self.current_frame = stackframe(localvars={}, func_def=func_def,code=func_def.body, args=args, kwargs=kwargs)
+            self._clear_sim_setting()
             return
-                    
-        print(f'<coroutine.pc:{self.pc}>')
-        self.local['sim']._set_stateptr(self)
-        self.local['sim'].dut._set_curr_branch(self.branch_idx)
 
-        if isinstance(self.coroutine.funbody[self.pc], ast.Expr):
-            expr = self.coroutine.funbody[self.pc]
-            if isinstance(expr.value, ast.Call):
-                # old:
-                # if isinstance(expr.value.func, ast.Attribute) and expr.value.func.value.id == 'sim' and expr.value.func.attr == 'wait_cond':
-                #     # in sim.wait_cond(...), you should not immediately
-                #     # interpret variables
-                #     self.local['sim'].dut._do_not_interpret_var = True
+        self._disable_var_intepret_if_needed(stmt)
+        self._allow_waits_if_encountered(stmt) # allow use of sim.wait_... only if we have such pattern         
 
-                # new: avoid attribute error
-                if isinstance(expr.value.func, ast.Attribute):
-                    func_value = expr.value.func.value
-                    if (isinstance(func_value, ast.Name) and func_value.id == 'sim' and expr.value.func.attr == 'wait_cond'):
-                        # in sim.wait_cond(...), you should not immediately
-                        # interpret variables
-                        self.local['sim'].dut._do_not_interpret_var = True
-
-                # new: need to handle func call like reset(sim, dut), directly inline the def func() to self.coroutine.funbody
-                # now we can use sim.wait in def func(), but not support sim.wait in if else / while loop yet
-                if isinstance(expr.value.func, ast.Name):
-                    global_env = {**globals(), **getattr(sys.modules[__name__], "_extra_globals", {})}
-                    func_name = expr.value.func.id
-                    func_obj = global_env.get(func_name, None)
-                    # print(func_name)
-                    if inspect.isfunction(func_obj):
-                        # get func source code, and parse it to ast
-                        try:
-                            src = inspect.getsource(func_obj)
-                            parsed = ast.parse(src)
-                            func_def = next(n for n in parsed.body if isinstance(n, ast.FunctionDef))
-                        except Exception:
-                            print("Warning: cannot get source code of function", func_name)
-                        else:
-                            # create param map
-                            param_map = {}
-                            for idx, arg_node in enumerate(expr.value.args):
-                                arg_val = arg_node
-                                # If it is a constant, you can directly use ast.Constant
-                                if isinstance(arg_val, ast.Constant):
-                                    param_map[func_def.args.args[idx].arg] = copy.deepcopy(arg_val)
-                                else:
-                                    # If it is a variable or expression, keep it as Name/expression AST
-                                    param_map[func_def.args.args[idx].arg] = arg_val
-
-                            body_copy = copy.deepcopy(func_def.body)
-                            # substitute parameters with arguments
-                            class ParamReplacer(ast.NodeTransformer):
-                                def __init__(self, param_map):
-                                    self.param_map = param_map
-                                def visit_Name(self, node):
-                                    if node.id in self.param_map:
-                                        return self.param_map[node.id]
-                                    return node
-
-                            replacer = ParamReplacer(param_map)
-                            body_copy = [replacer.visit(stmt) for stmt in body_copy]
-
-                            # insert into funbody
-                            # print("old:", self.coroutine.funbody)
-                            # print("body_copy:", body_copy)
-                            self.coroutine.funbody[self.pc+1:self.pc+1] = body_copy
-                            # print("new:", self.coroutine.funbody)
-
-                            self.local['sim']._set_stateptr(None)
-                            self.local['sim'].dut._set_curr_branch(None)
-                            self.local['sim'].dut._do_not_interpret_var = False
-                            self.pc += 1
-                            return
-        
-        if isinstance(self.coroutine.funbody[self.pc], ast.Return):
-            ret = self.coroutine.funbody[self.pc]
-            self.retval = eval(ret.value, {},  self.local)
-            print ('<coroutine finished>')
-            self.set_finished()
+        if isinstance(stmt, ast.Return):
+            self._return_encountered(stmt = stmt)            
         else:
             # sim.await will set await_cond
-            tmp_stmt = ast.Module(body=[self.coroutine.funbody[self.pc]], type_ignores=[])
+            tmp_stmt = ast.Module(body=[stmt], type_ignores=[])
+            global_env = _get_globals()
             # exec(compile(tmp_stmt, "<ast>", "exec"), {}, self.local)
-            exec(compile(tmp_stmt, "<ast>", "exec"), {**globals(), **getattr(sys.modules[__name__], "_extra_globals", {})}, self.local) # allow to get global env in test file
+            exec(compile(tmp_stmt, "<ast>", "exec"), global_env, self.current_frame.localvars) # allow to get global env in test file
+
+            self.current_frame.pc += 1
+            if self.current_frame.pc >= len(self.current_frame.code):
+                self._return_encountered(stmt=None) # may change self.current_frame, self.stack, self.current_frame.pc etc.
+        self._clear_sim_setting()
+
+    def _detect_function_trace(self, stmt:ast.AST): # returns func_def, call_ast, targets
+        if isinstance(stmt, ast.Expr) or isinstance(stmt, ast.Assign):
+            if isinstance(stmt, ast.Assign):
+                targets = stmt.targets
+                val = stmt.value
+            else:
+                targets = []
+                val = stmt.value
+
+            if targets and not isinstance(targets[0], ast.Name):
+                return None, None, None # will not track
             
-        self.local['sim']._set_stateptr(None)
-        self.local['sim'].dut._set_curr_branch(None)
-        self.local['sim'].dut._do_not_interpret_var = False
-        self.pc += 1
+            targets = [x.id for x in targets]
+
+            if isinstance(val, ast.Call):
+                call_ast = val
+                func_def = None
+                follow_func_call = False
+                if isinstance(call_ast.func, ast.Name):
+                    if need_to_trace(call_ast): # check this ast.Call, and see if any of this arguments contain sim/dut
+                        # get the function object from global variables
+                        global_env = _get_globals()
+                        func_name = call_ast.func.id
+                        func_obj = global_env.get(func_name, None)
+                        if inspect.isfunction(func_obj):
+                            if func_name in _all_functions:
+                                func_def = _all_functions[func_name]
+                                follow_func_call = True
+                            else:
+                                # get func source code, and parse it to ast
+                                try:
+                                    src = inspect.getsource(func_obj)
+                                    parsed = ast.parse(src)
+                                    func_def = next(n for n in parsed.body if isinstance(n, ast.FunctionDef))
+                                    follow_func_call = True
+                                except Exception:
+                                    print("Warning: cannot get source code of function", func_name, ". Will not track into.")
+
+                if follow_func_call:
+                    # maintain stack etc.
+                    assert (func_def is not None)
+                    return func_def, call_ast, targets
+        # else:
+        return (None, None, None)
+
+
+    def _disable_var_intepret_if_needed(self, stmt:ast.AST):
+        if isinstance(stmt, ast.Expr):
+            val = stmt.value
+            if isinstance(val, ast.Call):
+                call_ast = val
+                # new: avoid attribute error
+                if isinstance(call_ast.func, ast.Attribute):
+                    func_value = call_ast.func.value
+                    if (isinstance(func_value, ast.Name) and func_value.id == 'sim' and call_ast.func.attr == 'wait_cond'):
+                        # in sim.wait_cond(...), you should not immediately
+                        # interpret variables
+                        self.sim.dut._do_not_interpret_var = True
+
+
+    def _allow_waits_if_encountered(self, stmt:ast.AST):
+        if isinstance(stmt, ast.Expr):
+            val = stmt.value
+            if isinstance(val, ast.Call):
+                call_ast = val
+                # new: avoid attribute error
+                if isinstance(call_ast.func, ast.Attribute):
+                    func_value = call_ast.func.value
+                    if isinstance(func_value, ast.Name) and func_value.id == 'sim':
+                        if call_ast.func.attr in ['wait_cond','wait_cycle','wait_task','wait_posedge', 'wait_negedge']:
+                        # in sim.wait_cond(...), you should not immediately
+                        # interpret variables
+                            self.sim._allowed_waits = True
+
+
+    def _clear_sim_setting(self):
+        self.sim._set_stateptr(None)
+        self.sim.dut._set_curr_branch(None)
+        self.sim.dut._do_not_interpret_var = False
+        self.sim._allowed_waits = False
+        
         
         # currently, it is only a quick and dirty implementation
         # in general it is not as easy as it seems to be
@@ -578,34 +722,6 @@ class pywasim_local_state(object):
         #
         # but this does not create execution branches
         
-    def parse_arg(self):
-        assert (self.pc < 0) #you cannot call is_finished here
-        # parse its args, set the local variables
-        func_node = self.coroutine.astnodes.body[0]
-        assert isinstance(func_node, ast.FunctionDef)
-        args = [arg.arg for arg in func_node.args.args]
-        idx = 0
-        for arg in args:
-            if idx < len(self.args):
-                self.local[arg] = self.args[idx]
-            elif arg in self.kwargs:
-                self.local[arg] = self.kwargs[arg]
-                del self.kwargs[arg]
-            else:
-                raise RuntimeError('no arg for ' + arg)
-            idx += 1
-        if idx < len(self.args):
-            if func_node.args.vararg:
-                self.local[func_node.args.vararg] = self.args[idx:]
-            else:
-                raise RuntimeError('too many arguments ' + self.args[idx:])
-        if len(self.kwargs):
-            if func_node.args.kwarg:
-                self.local[func_node.args.kwarg] = self.kwargs
-            else:
-                raise RuntimeError('too many arguments ' + self.kwargs)
-        self.pc = 0
-                
                 
 # create pointers
 class pywasim_coroutine(object):
@@ -618,8 +734,11 @@ class pywasim_coroutine(object):
         # print (self.funbody[3])
         
     def invoke(self, *args, **kwargs):
-        _all_states.append(pywasim_local_state( coroutine = self, args = args, kwargs = kwargs))
-        _all_states[-1].parse_arg() # parse the argument at the time we invoke it
+        _all_states.append( \
+            pywasim_local_state(  \
+                coroutine = self,  \
+                initial_stackframe = \
+                    stackframe(localvars={}, func_def=self.astnodes.body[0],code=self.funbody, args=args, kwargs=kwargs)))
         return _all_states[-1]  # you can use sim.wait_task() on this
 
 def register_task(func):
@@ -667,7 +786,6 @@ def async_one_step(sim, dut):
             print(f'<coroutine #{idx}>')
             all_finished = False
 
-            assert (st.pc >= 0)
             if st.await_cond is not None and st.await_cond.execthread is not None:
               # if the task it waits has finished
               # we can remove its blocker so that it can continue
