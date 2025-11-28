@@ -361,6 +361,7 @@ class async_simulator(object):
         self.dut = dut
         self.finished = False
         self._allowed_waits = False # this will be turned on, only if we step onto such functions
+        self.globalvars = {}
 
     def get_var(self, name):
         return self.dut.simulator.get_var(name)
@@ -496,8 +497,8 @@ class stackframe(object):
         self.pc = 0
 
 
-def _get_globals()->dict:
-    return {**globals(), **getattr(sys.modules[__name__], "_extra_globals", {})}
+#def _get_globals()->dict:
+#    return {**globals(), **getattr(sys.modules[__name__], "_extra_globals", {})}
 
 def check_func_call(stmt:ast.AST) -> bool:
     for node in ast.walk(stmt):
@@ -516,15 +517,17 @@ def need_to_trace(callast:ast.Call) -> bool:
                 return True
     return False
 
-def eval_args(callast:ast.Call, localvars): # return args and kwargs
-    global_env = _get_globals()
+def eval_args(callast:ast.Call, localvars, globalvars): # return args and kwargs
+    global_env = globalvars
     args = []
     kwargs = {}
     for arg in callast.args:
-        args.append( eval(arg, global_env, localvars) )
+        c = compile(ast.Expression(body=arg), "<ast>", "eval")
+        args.append( eval( c , global_env, localvars) )
     for kw in callast.keywords:
         key = kw.arg
-        val = eval(kw.value, global_env, localvars)
+        c = compile(ast.Expression(body=kw.value), "<ast>", "eval")
+        val = eval( c, global_env, localvars)
         kwargs[key]=val
     return args, kwargs
 
@@ -568,14 +571,16 @@ class pywasim_local_state(object):
         if stmt is None:
             retval = None
         else:
-            global_env = _get_globals()
-            retval = eval(stmt.value, global_env,  self.current_frame.localvars)
+            global_env = self.sim.globalvars
+            c = compile(ast.Expression(body=stmt.value), "<ast>", "eval")
+            retval = eval(c, global_env,  self.current_frame.localvars)
         if len(self.stack):
             # pop the stack
             targets, self.current_frame = self.stack[-1]
             for vname in targets:
                 self.current_frame.localvars[vname] = retval
             del self.stack[-1]
+            self.current_frame.pc += 1 # return to the next stmt
         else:
             self.retval = retval
             print ('<coroutine finished>')
@@ -600,7 +605,7 @@ class pywasim_local_state(object):
         if func_def is not None: # this means we need to trace assert (func_def is not None)
             # follow into the function call
             self.stack.append((targets, self.current_frame))
-            args,kwargs = eval_args(call_ast, self.current_frame.localvars)
+            args,kwargs = eval_args(call_ast, self.current_frame.localvars, self.sim.globalvars)
             # EVAL val
             self.current_frame = stackframe(localvars={}, func_def=func_def,code=func_def.body, args=args, kwargs=kwargs)
             self._clear_sim_setting()
@@ -614,7 +619,7 @@ class pywasim_local_state(object):
         else:
             # sim.await will set await_cond
             tmp_stmt = ast.Module(body=[stmt], type_ignores=[])
-            global_env = _get_globals()
+            global_env = self.sim.globalvars
             # exec(compile(tmp_stmt, "<ast>", "exec"), {}, self.local)
             exec(compile(tmp_stmt, "<ast>", "exec"), global_env, self.current_frame.localvars) # allow to get global env in test file
 
@@ -644,7 +649,7 @@ class pywasim_local_state(object):
                 if isinstance(call_ast.func, ast.Name):
                     if need_to_trace(call_ast): # check this ast.Call, and see if any of this arguments contain sim/dut
                         # get the function object from global variables
-                        global_env = _get_globals()
+                        global_env = self.sim.globalvars
                         func_name = call_ast.func.id
                         func_obj = global_env.get(func_name, None)
                         if inspect.isfunction(func_obj):
@@ -660,7 +665,6 @@ class pywasim_local_state(object):
                                     follow_func_call = True
                                 except Exception:
                                     print("Warning: cannot get source code of function", func_name, ". Will not track into.")
-
                 if follow_func_call:
                     # maintain stack etc.
                     assert (func_def is not None)
