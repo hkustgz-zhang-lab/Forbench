@@ -163,8 +163,13 @@ class Dut:
             self.simulator.undo_set_input(branch_idx)
         self._create_iv_dict(branch_idx)  # create new inputvars only after all these steps
 
-    def step_cycle(self, branch_idx):
-        """Currently """
+    def step_cycle(self):
+        """This function is used internally"""
+        assert (self.curr_branch_idx is not None)
+        return self.simulator.tracelen(self.curr_branch_idx)
+    
+    def _step_cycle(self, branch_idx):
+        """This function is used internally"""
         return self.simulator.tracelen(branch_idx)    # return origin branch tracelen
 
     def check_prop(self):
@@ -281,7 +286,7 @@ class SignalProxy:
     @property
     def value(self):
         assert (self.dut.curr_branch_idx is not None)
-        if self.dut.step_cycle(self.dut.curr_branch_idx) == 0:
+        if self.dut._step_cycle(self.dut.curr_branch_idx) == 0:
             raise Exception('Combinational circuits also need initialization (free_init)')
         curr_branch_idx = self.dut.curr_branch_idx
         iv_term_dict = self.dut._get_curr_branch_iv_term_dict()
@@ -567,7 +572,7 @@ class pywasim_local_state(object):
     def return_value(self):
         return self.retval
     
-    def _return_encountered(self, stmt):
+    def _return_encountered(self, stmt:ast.AST | None):
         if stmt is None:
             retval = None
         else:
@@ -577,6 +582,7 @@ class pywasim_local_state(object):
         if len(self.stack):
             # pop the stack
             targets, self.current_frame = self.stack[-1]
+            # TODO: pop untill you meet a `func`,  (you can return in a possibly nested if/loop etc.)
             for vname in targets:
                 self.current_frame.localvars[vname] = retval
             del self.stack[-1]
@@ -614,6 +620,10 @@ class pywasim_local_state(object):
         self._disable_var_intepret_if_needed(stmt)
         self._allow_waits_if_encountered(stmt) # allow use of sim.wait_... only if we have such pattern         
 
+        # TODO: detect if it is if/while/for
+        # and trace into these statement similar as how we deal with functions
+        # difference: if/while/for does not have `return` but they have `break` and `continue`
+
         if isinstance(stmt, ast.Return):
             self._return_encountered(stmt = stmt)            
         else:
@@ -629,6 +639,12 @@ class pywasim_local_state(object):
         self._clear_sim_setting()
 
     def _detect_function_trace(self, stmt:ast.AST): # returns func_def, call_ast, targets
+        """
+        This decides if we are going to trace into the function or not,
+        based on some critera:
+        1. ret = f(...)
+        2. the argument list contains sim or dut
+        """
         if isinstance(stmt, ast.Expr) or isinstance(stmt, ast.Assign):
             if isinstance(stmt, ast.Assign):
                 targets = stmt.targets
@@ -674,6 +690,9 @@ class pywasim_local_state(object):
 
 
     def _disable_var_intepret_if_needed(self, stmt:ast.AST):
+        """This is to ensure that when you can dut.sig.value, it returns the variable for `sig`
+           rather than the symbolic expression for `sig` at that cycle.
+        """
         if isinstance(stmt, ast.Expr):
             val = stmt.value
             if isinstance(val, ast.Call):
@@ -688,6 +707,7 @@ class pywasim_local_state(object):
 
 
     def _allow_waits_if_encountered(self, stmt:ast.AST):
+        """If waits are encountered in untrack functions, error will raise"""
         if isinstance(stmt, ast.Expr):
             val = stmt.value
             if isinstance(val, ast.Call):

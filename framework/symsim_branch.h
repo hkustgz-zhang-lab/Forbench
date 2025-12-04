@@ -122,7 +122,8 @@ class SymbolicSimulatorBranch
 
   /// a shortcut to create symbolic variables/concrete values in a map
   smt::UnorderedTermMap convert(const assignment_type & vdict) const; // ok
-  /// a shortcut to create X values for inputs
+  /// a shortcut to create X values for inputs, if you give the variable name
+  /// then it will only create the X-var for that input, otherwise all inputs
   smt::UnorderedTermMap create_input_Xvars(const std::string & inputvar_name = "");
 
   /// goto the previous simulation step
