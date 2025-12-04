@@ -21,7 +21,7 @@ def run2(sim, dut, a,b):  #
     return task1.return_value()
 """ 
 
-dut = pywasim.Dut('../../design/asynctest/mul.btor2')
+dut = pywasim.Dut('../../design/asynctest/mul/mul.btor2')
 sim = pywasim.async_simulator(dut)
 
 dut.set_init()
