@@ -1,0 +1,9 @@
+read_verilog -formal ila-ref.v simple_pipe_stall.v wrapper_add.v
+prep -top wrapper
+flatten
+memory -nordff
+hierarchy -check
+setundef -undriven -init -expose
+sim -clock clk -reset rst -rstlen 1 -n 1 -w wrapper
+write_btor -s wrapper_add.btor2
+
