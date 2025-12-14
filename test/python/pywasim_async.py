@@ -72,7 +72,7 @@ class Dut:
     # None user-facing functions must be provided by branch_idx
     def _fork_branch(self, branch_idx):
         self.branch_list.append(self.branch_list[branch_idx].clone())
-        new_branch_id = self.simulator._fork_branch(branch_idx)
+        new_branch_id = self.simulator.fork_branch(branch_idx)
         assert (new_branch_id == len(self.branch_list)-1)
         return new_branch_id
 
@@ -624,7 +624,8 @@ class pywasim_local_state(object):
         if len(self.stack):
             # pop the stack
             targets, self.current_frame = self.stack[-1]
-            self._bind_for_target(targets, retval) # assign the return value
+            if targets:
+                self._bind_for_target(targets, retval) # assign the return value
             del self.stack[-1]
             self.current_frame.pc += 1 # return to the next stmt
         else:
