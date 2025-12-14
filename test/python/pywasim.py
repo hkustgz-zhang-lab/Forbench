@@ -45,7 +45,7 @@ class Dut:
 
     def _create_iv_dict(self):
         iv_dict = {}
-        idx = str(self.step_cycle())
+        idx = str(self.current_cycle())
         for iv in self.inputvars_list:
             iv_dict[iv.to_string()] = iv.to_string()+ "X" + idx # inputvar string dict
         self.iv_term_dict = self.simulator.convert(iv_dict) # create default inputvars term dict
@@ -88,7 +88,7 @@ class Dut:
         self.simulator.undo_set_input()
         self._create_iv_dict()  # create new inputvars
 
-    def step_cycle(self):
+    def current_cycle(self):
         return self.simulator.tracelen()
 
     def check_prop(self):
@@ -216,5 +216,5 @@ class SignalProxy:
             raise ValueError(f"No such default assignment to variable '{self.name}'.")
         del self.dut.iv_term_dict_default[iv_nr]
         # reset to X signal
-        xvar = self.dut.simulator.get_var(self.name + "X" + str(self.dut.step_cycle()))
+        xvar = self.dut.simulator.get_var(self.name + "X" + str(self.dut.current_cycle()))
         self.dut.iv_term_dict.update({iv_nr : xvar})

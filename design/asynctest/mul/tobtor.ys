@@ -1,7 +1,7 @@
-read_verilog -formal mul.v
+read_verilog -formal mul_free_restart.v
 prep -top mul
 flatten
 memory -nomap
 hierarchy -check
 setundef -undriven -init -expose
-write_btor  -s mul.btor2
+write_btor  -s mul_free_restart.btor2

@@ -1,0 +1,21 @@
+1. if/while forking coroutine
+2. wait_cond --> wait_cond_next_cycle (wait_cond will allow you to start from current cycle)
+
+wait_cond(c):
+  while True:
+    if c:
+      break
+    wait_cycle()
+
+wait_cond_next_cycle(c):
+  while True:
+    wait_cycle()
+    if c:
+      break
+
+3. sync: update  _create_iv_dict to match async
+4. dump cex
+5. async --> backward script
+6. integration w. other parts of wasim...
+
+

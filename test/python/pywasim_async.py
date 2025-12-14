@@ -70,9 +70,9 @@ class Dut:
         return self.branch_list[self.curr_branch_idx].iv_term_dict_default
 
     # None user-facing functions must be provided by branch_idx
-    def fork_branch(self, branch_idx):
+    def _fork_branch(self, branch_idx):
         self.branch_list.append(self.branch_list[branch_idx].clone())
-        new_branch_id = self.simulator.fork_branch(branch_idx)
+        new_branch_id = self.simulator._fork_branch(branch_idx)
         assert (new_branch_id == len(self.branch_list)-1)
         return new_branch_id
 
@@ -126,7 +126,7 @@ class Dut:
         assert (self.curr_branch_idx is not None)
         self.branch_list[self.curr_branch_idx].constraints.append(constr)
     
-    def clear_constraint(self):
+    def clear_constraints(self):
         assert (self.curr_branch_idx is not None)
         self.branch_list[self.curr_branch_idx].constraints = []
 
@@ -152,7 +152,7 @@ class Dut:
             #branch.iv_term_dict.update(branch.iv_term_dict_default) # FIXME: this does not look correct
             self.simulator.set_input(iv_term_dict, asmpt, branch_idx)
             self.simulator.sim_one_step(branch_idx)
-            print (f'<dut.step br#{branch_idx} cycle:{self.step_cycle(branch_idx)-1}>')
+            print (f'<dut.step br#{branch_idx} cycle:{self._current_cycle(branch_idx)}>')
         self._create_iv_dict(branch_idx)
     
     # not use
@@ -163,14 +163,14 @@ class Dut:
             self.simulator.undo_set_input(branch_idx)
         self._create_iv_dict(branch_idx)  # create new inputvars only after all these steps
 
-    def step_cycle(self):
-        """This function is used internally"""
+    def current_cycle(self) -> int:
+        """This function is used externally. The cycle count starts from 0. """
         assert (self.curr_branch_idx is not None)
-        return self.simulator.tracelen(self.curr_branch_idx)
+        return self.simulator.tracelen(self.curr_branch_idx)-1
     
-    def _step_cycle(self, branch_idx):
-        """This function is used internally"""
-        return self.simulator.tracelen(branch_idx)    # return origin branch tracelen
+    def _current_cycle(self, branch_idx) -> int:
+        """This function is used internally. The cycle count starts from 0. """
+        return self.simulator.tracelen(branch_idx)-1    # return origin branch tracelen
 
     def check_prop(self):
         assert (False)
@@ -229,8 +229,6 @@ class Dut:
         else:
             print("check assertion result: pass!")
         return not res
-
-    # TODO: user should be allowed to either print one branch or print all...
     
     def print_curr_sv(self):
         assert (self.curr_branch_idx is not None)
@@ -286,7 +284,7 @@ class SignalProxy:
     @property
     def value(self):
         assert (self.dut.curr_branch_idx is not None)
-        if self.dut._step_cycle(self.dut.curr_branch_idx) == 0:
+        if self.dut._current_cycle(self.dut.curr_branch_idx) < 0:
             raise Exception('Combinational circuits also need initialization (free_init)')
         curr_branch_idx = self.dut.curr_branch_idx
         iv_term_dict = self.dut._get_curr_branch_iv_term_dict()
@@ -361,8 +359,8 @@ class SignalProxy:
 
 
 class async_simulator(object):
-    def __init__(self, dut):
-        self._state_ptr = None # should point to a pywasim_local_state object
+    def __init__(self, dut:Dut):
+        self._state_ptr : pywasim_local_state | None = None # should point to a pywasim_local_state object
         self.dut = dut
         self.finished = False
         self._allowed_waits = False # this will be turned on, only if we step onto such functions
@@ -371,9 +369,26 @@ class async_simulator(object):
     def get_var(self, name):
         return self.dut.simulator.get_var(name)
     
+    def current_cycle(self) -> int:
+        assert (self._state_ptr)
+        return self.dut._current_cycle(self._state_ptr.branch_idx)
+
     # not use
     def set_var(self, name, width:int):
         return self.dut.simulator.set_var(width, name)
+    
+    def check_sat(self, expr, asmpts = []):
+        assert (self._state_ptr)
+        curr_branch_idx = self._state_ptr.branch_idx
+        print('<solver call>')
+        can_sat = self.dut.check_sat(expr, asmpts)
+        print('<end solver call>')
+        if can_sat:
+            print ('<may sat>')
+        else:
+            print ('<may not sat>')
+        return can_sat        
+
 
     def check_assertion(self, expr, asmpts = []):    # check_valid
         assert (self._state_ptr)
@@ -392,7 +407,7 @@ class async_simulator(object):
             raise AssertionError('sim.check_assertion failed')
             print("sim.check_assertion failed")
             return False
-        print("sim.check_assertion pass")
+        print("<sim.check_assertion pass>")
         return True        
         
     def _set_stateptr(self, ptr):
@@ -446,9 +461,30 @@ class await_condition(object):
     # you will need to test if this is ready
 
 class stackframe(object):
-    def __init__(self, localvars, func_def, code, args, kwargs):
+    def __init__(self, localvars, func_def, code, args, kwargs, block_kind = None, block_node = None, loop_iter = None):
         # func_or_block == "func" or 'block' depends on if (func_def is None)
         self.func_or_block = 'block' if func_def is None else 'func'
+        if func_def is None:
+            # this means it is a block, the required parameters must be provided
+            assert (block_kind is not None)
+            assert (block_node is not None)
+            assert (block_kind in ['if','if-orelse', 'while','while-orelse','for','for-orelse'])
+            # block_kind indicates which part we are at
+            # it does not mean if the block as orelse or not
+            # e.g., it is possible that `block_kind` == `if` but this if has orelse
+            # elif are flattened to nested if within the else part ...
+            if block_kind in ['for','for-orelse']:
+                assert (loop_iter is not None)
+            # for blocks, the code is the code to be executed, while block node is the top-level AST node
+            # this is useful when you later need to get to orelse
+            # if there is break inside, you don't need to get to orelse
+
+        self.block_kind : str | None = block_kind   # for func_or_block == 'block' blocks, track control-flow type
+        # block_kind in ['if','while','while-orelse','for','for-orelse']
+        self.block_node : ast.If | ast.While | ast.For | None = block_node   # original ast.If/While/For node
+        self.loop_iter = loop_iter    # iterator for ast.For (This is the one after eval)
+        # therefore, we cannot allow iterator contains anything that invokes sim/dut etc.
+        # because we are not taking over the execution of that currently
 
         self.localvars  = localvars
         self.pc = -1
@@ -460,6 +496,8 @@ class stackframe(object):
         self.func_def = func_def # should be assigned to coroutine.astnodes.body[0]
         if func_def is not None:
             self.parse_arg(args, kwargs)
+        else: # no need to parse arg for block stackframe
+            self.pc = 0
 
     def __deepcopy__(self, memo):
         cls = self.__class__
@@ -493,12 +531,12 @@ class stackframe(object):
             if self.func_def.args.vararg:
                 self.localvars[self.func_def.args.vararg] = caller_args[idx:]
             else:
-                raise RuntimeError('too many arguments ' + caller_args[idx:])
+                raise RuntimeError('too many arguments for ' + self.func_def.name)
         if len(caller_kwargs):
             if self.func_def.args.kwarg:
                 self.localvars[self.func_def.args.kwarg] = caller_kwargs
             else:
-                raise RuntimeError('too many arguments ' + caller_kwargs)
+                raise RuntimeError('too many arguments ' + self.func_def.name)
         self.pc = 0
 
 
@@ -541,7 +579,8 @@ class pywasim_local_state(object):
     def __init__(self, coroutine, initial_stackframe:stackframe):
         self.coroutine = coroutine
         self.current_frame = initial_stackframe
-        self.stack = [] # list of (targetList, stackframe)
+        self.stack = [] # list of (targetList : list or None, stackframe)
+        # for block stackframe, targetList is None
         self.await_cond = None  # await condition could be clock(n)
         self.retval = None
         # new for branch
@@ -576,15 +615,16 @@ class pywasim_local_state(object):
         if stmt is None:
             retval = None
         else:
-            global_env = self.sim.globalvars
-            c = compile(ast.Expression(body=stmt.value), "<ast>", "eval")
-            retval = eval(c, global_env,  self.current_frame.localvars)
+            retval = self._eval_expr(stmt.value)
+
+        # pop until you meet a `func`,  (you can return in a possibly nested if/loop etc.)
+        while len(self.stack) > 0 and self.stack[-1][1].func_or_block == 'block':
+            del self.stack[-1]
+
         if len(self.stack):
             # pop the stack
             targets, self.current_frame = self.stack[-1]
-            # TODO: pop untill you meet a `func`,  (you can return in a possibly nested if/loop etc.)
-            for vname in targets:
-                self.current_frame.localvars[vname] = retval
+            self._bind_for_target(targets, retval) # assign the return value
             del self.stack[-1]
             self.current_frame.pc += 1 # return to the next stmt
         else:
@@ -594,25 +634,48 @@ class pywasim_local_state(object):
     
     def step(self):
         """This function will handle the execution of Python code"""
+        
+        self.sim._set_stateptr(self)
+        self.sim.dut._set_curr_branch(self.branch_idx)
+
+        # you may need to pop multiple blocks (say you just finish one block and 
+        # are happened to be the end of a function as well)
+        while self.current_frame.pc >= len(self.current_frame.code) and not self.is_finished():
+            if self.current_frame.func_or_block == 'block':
+                self._handle_end_of_block()
+            else:
+                self._return_encountered(stmt=None) # may change self.current_frame, self.stack, self.current_frame.pc etc.
         if self.is_finished():
             print ('<coroutine finished>')
+            self._clear_sim_setting()
             return
         assert (self.current_frame.pc < len(self.current_frame.code))
         print(f'<coroutine.pc:{self.current_frame.pc} , stack size:{len(self.stack)}>')
 
-        self.sim._set_stateptr(self)
-        self.sim.dut._set_curr_branch(self.branch_idx)
-
-
+        # ---------------------------------------------
         stmt = self.current_frame.get_curr_ast()
 
+        handled_block, stack_pushed = self._handle_control_flow(stmt)
+        # (1) it is one of if/while/... (1a) stack pushed (1b) not pushed             (2) it is not
+        #                                    next round        advance pc/next round      do nothing, get to the next part
+        if handled_block:
+            if not stack_pushed:
+                self._advance_pc()
+            self._clear_sim_setting()
+            return
+        
+        if self._handle_break_continue(stmt):
+            self._clear_sim_setting()
+            # no need to advance pc here
+            return
 
         func_def, call_ast, targets = self._detect_function_trace(stmt)
         if func_def is not None: # this means we need to trace assert (func_def is not None)
             # follow into the function call
-            self.stack.append((targets, self.current_frame))
+            self.stack.append((targets, self.current_frame)) # does not change pc here, will return to pc+1
             args,kwargs = eval_args(call_ast, self.current_frame.localvars, self.sim.globalvars)
             # EVAL val
+            # Below creates a function stackframe
             self.current_frame = stackframe(localvars={}, func_def=func_def,code=func_def.body, args=args, kwargs=kwargs)
             self._clear_sim_setting()
             return
@@ -620,25 +683,158 @@ class pywasim_local_state(object):
         self._disable_var_intepret_if_needed(stmt)
         self._allow_waits_if_encountered(stmt) # allow use of sim.wait_... only if we have such pattern         
 
-        # TODO: detect if it is if/while/for
-        # and trace into these statement similar as how we deal with functions
-        # difference: if/while/for does not have `return` but they have `break` and `continue`
-
         if isinstance(stmt, ast.Return):
             self._return_encountered(stmt = stmt)            
         else:
             # sim.await will set await_cond
             tmp_stmt = ast.Module(body=[stmt], type_ignores=[])
+            tmp_stmt = ast.fix_missing_locations(tmp_stmt)  # add this to make it more robust
             global_env = self.sim.globalvars
             # exec(compile(tmp_stmt, "<ast>", "exec"), {}, self.local)
             exec(compile(tmp_stmt, "<ast>", "exec"), global_env, self.current_frame.localvars) # allow to get global env in test file
-
-            self.current_frame.pc += 1
-            if self.current_frame.pc >= len(self.current_frame.code):
-                self._return_encountered(stmt=None) # may change self.current_frame, self.stack, self.current_frame.pc etc.
+            self._advance_pc()
         self._clear_sim_setting()
 
-    def _detect_function_trace(self, stmt:ast.AST): # returns func_def, call_ast, targets
+    def _advance_pc(self):
+        self.current_frame.pc += 1
+    
+    def _handle_break_continue(self, stmt: ast.AST) -> bool :
+        """return value: either break or continue"""
+        if isinstance(stmt, ast.Break):
+            assert (self.current_frame.func_or_block == 'block')
+            assert (self.current_frame.block_kind in ['for','while'])
+            self._pop_stack_frame()
+            return True
+        
+        if isinstance(stmt, ast.Continue):
+            assert (self.current_frame.func_or_block == 'block')
+            assert (self.current_frame.block_kind in ['for','while'])
+            self.current_frame.pc = len(self.current_frame.code)
+            return True
+        return False        
+
+
+    def _handle_control_flow(self, stmt: ast.AST) -> tuple[bool,bool]:
+        """Trace into if/while/for bodies statement-by-statement (and push the stackframe). 
+        Return value indicates (1) if it is one of if/while/for (2) whether stack is pushed"""
+        if isinstance(stmt, ast.If):
+            # TODO: later we will try to detect here, if it is a NodeRef type or not (you will need
+            # to evaluate it first anyway)
+            cond_val = self._eval_expr(stmt.test)
+            pushed_stack = False
+            if cond_val:
+                assert(stmt.body) # cannot be empty or None
+                self._push_block_frame(stmt.body, block_kind='if', block_node=stmt)
+                pushed_stack = True
+            elif stmt.orelse:
+                self._push_block_frame(stmt.orelse, block_kind='if-orelse', block_node=stmt)
+                pushed_stack = True
+            # even if we are not pushing (if False:) we don't need to execute this stmt either
+            return (True,pushed_stack)
+
+        if isinstance(stmt, ast.While):
+            cond_val = self._eval_expr(stmt.test)
+            pushed_stack = False
+            if not cond_val and stmt.orelse:
+                self._push_block_frame(stmt.orelse, block_kind='while-orelse', block_node=stmt)
+                pushed_stack = True
+            else:
+                self._push_block_frame(stmt.body, block_kind='while', block_node=stmt)
+                pushed_stack = True
+            return (True,pushed_stack)
+
+        if isinstance(stmt, ast.For):
+            iter_obj = self._eval_expr(stmt.iter)
+            iterator = iter(iter_obj)
+            try:
+                first_val = next(iterator)
+            except StopIteration:
+                pushed_stack = False
+                if stmt.orelse:
+                    self._push_block_frame(stmt.orelse, block_kind='for-orelse', block_node=stmt)
+                    pushed_stack = True
+                return (True,pushed_stack)
+            self._bind_for_target([stmt.target], first_val)  # in for-loop, you have `for x in rhs`, here we assign to x
+            self._push_block_frame(stmt.body, block_kind='for', block_node=stmt, loop_iter=iterator)
+            return (True,True)
+        # if it is not if/for/while return false
+        return (False,False)
+
+    def _push_block_frame(self, code_block, *, block_kind: str, block_node: ast.AST, loop_iter=None):
+        """This is only for block's stackframe, not for function's"""
+        block_body = list(code_block) if len(code_block) else [ast.Pass()] # add a `pass` (do nothing) 
+        # this is because Python does not allow empty block anyway...
+        new_frame = stackframe(localvars=self.current_frame.localvars, func_def=None, code=block_body, args=None, kwargs=None,\
+                               block_kind = block_kind, block_node = block_node, loop_iter = loop_iter)
+        self.stack.append(([], self.current_frame)) # empty target
+        self.current_frame = new_frame
+
+    def _handle_end_of_block(self):
+        """This handles the end of a block stackframe, re-eval the condition and rewind pc if necessary"""
+        block_kind = self.current_frame.block_kind # getattr(self.current_frame, 'block_kind', None)
+        block_node = self.current_frame.block_node # getattr(self.current_frame, 'block_node', None)
+        assert (block_kind in ['while', 'while-orelse', 'if', 'if-orelse', 'for', 'for-orelse'])
+        # if it is while loop, recheck the condition and maybe look back
+        print (f'<end of `{block_kind}` block>')
+
+        if block_kind in ['while']:
+            if self._eval_expr(block_node.test):
+                self.current_frame.pc = 0 # loop back here
+                return
+            if block_node.orelse:
+                self.current_frame.code = block_node.orelse
+                self.current_frame.block_kind = 'while-orelse'
+                self.current_frame.pc = 0
+                return
+            #else: not true and no orelse, end of this block
+            self._pop_stack_frame()
+            return
+
+        if block_kind in ['for']:
+            iterator = self.current_frame.loop_iter # getattr(self.current_frame, 'loop_iter', None)
+            try:
+                next_val = next(iterator)
+            except StopIteration:
+                if block_node.orelse: # this seems to be wrong? how to handle `orelse` ? 
+                    self.current_frame.code = block_node.orelse
+                    self.current_frame.block_kind = 'for-orelse'
+                    self.current_frame.pc = 0
+                    self.current_frame.loop_iter = None
+                    return
+                # else pop s
+                self._pop_stack_frame()
+                return
+            self._bind_for_target([block_node.target], next_val)
+            self.current_frame.pc = 0
+            return
+        # ['while-orelse'] and ['for-orelse'] and others ... just pop and return 
+        self._pop_stack_frame()
+        # end of `_handle_end_of_block`
+
+    def _bind_for_target(self, target_asts: list[ast.AST], value):
+        """Assign loop value to for-loop target respecting destructuring."""
+        tmp_var = "_pywasim_iter_tmp"
+        self.current_frame.localvars[tmp_var] = value
+        assign_ast = ast.Assign(targets=copy.deepcopy(target_asts), value=ast.Name(id=tmp_var, ctx=ast.Load()))
+        mod = ast.Module(body=[assign_ast], type_ignores=[])
+        mod = ast.fix_missing_locations(mod)
+        global_env = self.sim.globalvars
+        exec(compile(mod, "<ast>", "exec"), global_env, self.current_frame.localvars)
+        del self.current_frame.localvars[tmp_var]
+
+    def _pop_stack_frame(self):
+        """used for block finish"""
+        assert len(self.stack)
+        _, self.current_frame = self.stack[-1]
+        del self.stack[-1]
+        self.current_frame.pc += 1
+ 
+    def _eval_expr(self, expr: ast.AST):
+        global_env = self.sim.globalvars
+        compiled = compile(ast.Expression(body=expr), "<ast>", "eval")
+        return eval(compiled, global_env, self.current_frame.localvars)
+
+    def _detect_function_trace(self, stmt:ast.AST): # returns func_def, call_ast, targets: list of expr
         """
         This decides if we are going to trace into the function or not,
         based on some critera:
@@ -652,11 +848,11 @@ class pywasim_local_state(object):
             else:
                 targets = []
                 val = stmt.value
-
-            if targets and not isinstance(targets[0], ast.Name):
-                return None, None, None # will not track
             
-            targets = [x.id for x in targets]
+            # # we can use the bind function to perform assignment
+            # if targets and not isinstance(targets[0], ast.Name):
+            #     return None, None, None # will not track
+            # targets = [x.id for x in targets]
 
             if isinstance(val, ast.Call):
                 call_ast = val
@@ -723,6 +919,7 @@ class pywasim_local_state(object):
 
 
     def _clear_sim_setting(self):
+        """Must be called when as the end of `step` function"""
         self.sim._set_stateptr(None)
         self.sim.dut._set_curr_branch(None)
         self.sim.dut._do_not_interpret_var = False
@@ -773,7 +970,10 @@ def register_task(func):
     def wrapper(*args, **kwargs):
         _all_coroutine[l-1].invoke(*args, **kwargs)
     return wrapper # this is used to register the args
-    
+
+def run_later(func, *args, **kwargs) -> None:
+    func(*args, **kwargs)
+
 def start_loop(sim, dut, bound = -1):
     if len(_all_states) == 0:
         return
@@ -882,7 +1082,7 @@ def async_one_step(sim, dut):
                 #st.branch_cond.append(~cond_curr)  # record this as false
             else:
                 assert(maybe_true and maybe_false)
-                br_idx = dut.fork_branch(curr_branch_idx) # increment max_branch_idx, must before st.clone()
+                br_idx = dut._fork_branch(curr_branch_idx) # increment max_branch_idx, must before st.clone()
                 # st.clone clears passthrough.await_cond
                 passthrough = st.clone(branch_idx = br_idx) # link the state with the branch
                 assert (passthrough.await_cond is None)

@@ -1,6 +1,6 @@
 import pywasim_async as pywasim
 
-# alwasys block 1
+# always block 1
 @pywasim.register_task
 def run1(sim, dut, pywasim):  # 
     dut.a.value = 'a0'
@@ -9,7 +9,7 @@ def run1(sim, dut, pywasim):  #
     sim.wait_cycle()
     sim.check_assertion(dut.out1.value == pywasim.zero_extend(sim.get_var('a0'),1) + pywasim.zero_extend(sim.get_var('b0'),1))
 
-# alwasys block 2
+# always block 2
 @pywasim.register_task
 def run2(sim, dut, pywasim):  # 
     dut.c.value = 'c0'

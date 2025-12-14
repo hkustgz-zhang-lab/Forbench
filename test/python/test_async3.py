@@ -1,6 +1,6 @@
 import pywasim_async as pywasim
 
-# alwasys block 1
+# always block 1
 @pywasim.register_task
 def run1(sim, dut):  # 
     dut.a.value = 'a0'
@@ -19,7 +19,7 @@ def f2(sim,dut, val):
     sim.wait_cycle()
     return sim.get_var(val)
 
-# alwasys block 2
+# always block 2
 @pywasim.register_task
 def run2(sim, dut):  # 
     dut.c.value = 'c0'
@@ -32,8 +32,8 @@ dut = pywasim.Dut('../../design/pywasim-test/adder_async.btor2')
 sim = pywasim.async_simulator(dut)
 
 dut.set_init()
-run1(sim, dut)  # pywasim.run_later(run1(sim, dut, pywasim))
-run2(sim, dut)
+run1(sim, dut)  
+pywasim.run_later(run2, sim, dut) # same as `run2(sim, dut)`
 sim.globalvars = globals()
 pywasim.start_loop(sim, dut, 100)
 print("branch num:", len(dut.branch_list))
