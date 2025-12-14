@@ -196,7 +196,7 @@ class Dut:
         return not res  # unsat -> return True
 
     def check_sat(self, asst, asmpts):
-        print('dut.check_sat')
+        print('<dut.check_sat>')
         assert (self.curr_branch_idx is not None)
         asmpts_all = self.simulator.all_assumptions(self.curr_branch_idx)
         asmpts_all.extend(asmpts)
@@ -1073,7 +1073,7 @@ def async_one_step(sim, dut):
             maybe_false = dut.check_sat(~cond_curr, [] )
             dut._set_curr_branch(None)
 
-            print('branch:',maybe_true, maybe_false)
+            print('<branch:',maybe_true, maybe_false,'>')
             if maybe_true and not maybe_false:
                 st.await_cond = None
                 dut.simulator.add_assumption_interpreted(curr_branch_idx, cond_curr, "branch cond")
