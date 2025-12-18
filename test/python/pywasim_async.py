@@ -125,7 +125,11 @@ class Dut:
     def set_constraint(self, constr):
         assert (self.curr_branch_idx is not None)
         self.branch_list[self.curr_branch_idx].constraints.append(constr)
-    
+        
+    def unset_constraint(self, constr):
+        assert (self.curr_branch_idx is not None)
+        self.branch_list[self.curr_branch_idx].constraints = [x for x in self.branch_list[self.curr_branch_idx].constraints if x != constr]     # remove this constr totally
+
     def clear_constraints(self):
         assert (self.curr_branch_idx is not None)
         self.branch_list[self.curr_branch_idx].constraints = []
