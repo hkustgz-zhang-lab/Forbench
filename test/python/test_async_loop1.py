@@ -4,7 +4,7 @@ import pywasim_async as pywasim
 @pywasim.register_task
 def run1(sim, dut):  # 
     for i in range(10):
-        n_cycle = sim.step_cycle()
+        n_cycle = sim.current_cycle()
         print (f'iteration:{i} current cycle:{n_cycle}')
         avar = f'a{i}'
         bvar = f'b{i}'
