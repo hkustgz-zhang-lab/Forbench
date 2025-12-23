@@ -4,6 +4,7 @@ import inspect
 import ast
 import copy
 from functools import wraps
+import types
 
 script_path = os.path.realpath(__file__)
 parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(script_path)))
@@ -125,6 +126,11 @@ class Dut:
     def set_constraint(self, constr):
         assert (self.curr_branch_idx is not None)
         self.branch_list[self.curr_branch_idx].constraints.append(constr)
+
+    def _get_constraint_list_ref(self):
+        """This function should not be called by others except the simulator"""
+        assert (self.curr_branch_idx is not None)
+        return self.branch_list[self.curr_branch_idx].constraints
     
     def clear_constraints(self):
         assert (self.curr_branch_idx is not None)
@@ -260,6 +266,13 @@ class Dut:
         
     def expr_simplify_ite(self, expr, asspt):
         return expr_simplify_ite(expr, asspt, self.solver)  # public func in pywasimbase
+    def __copy__(self):
+        # will not copy 
+        return self
+    def __deepycopy__(self,memo):
+        # will not copy 
+        return self
+    
     
 class VarProxy:
     def __init__(self, dut, name, var):
@@ -357,6 +370,21 @@ class SignalProxy:
             xvar = list(xvar_dict.items())[0][1]
             iv_term_dict[iv_nr] = xvar
 
+class WhenObject(object):
+    def __init__(self, constraint_list_ref:list, cidx:int, possible:bool):
+        self._constraint_list_ref = constraint_list_ref
+        self._cidx = cidx
+        self.possible = possible
+    def __enter__(self) -> None:
+        """Do nothing if not skipped. If skipped, use exception to skip the `with` body"""
+        return self.possible
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """try to remove the constraint """
+        if len(self._constraint_list_ref) != self._cidx + 1:
+            print('Warning: more constraints added in `with` block. These will not be removed when getting out of `with`')
+        del self._constraint_list_ref[self._cidx]
+        return False # indicates we are not handling exceptions
 
 class async_simulator(object):
     def __init__(self, dut:Dut):
@@ -367,8 +395,20 @@ class async_simulator(object):
         self.globalvars = {}
 
     def get_var(self, name):
+        """This is typically used to get a symbolic variable, that was previously provided as a string"""
         return self.dut.simulator.get_var(name)
     
+    def assume(self, cond, check_possible = False) -> WhenObject:
+        """cond could be NodeRef or string (future work). Returns a when object"""
+        possible = True
+        if check_possible:
+            possible = self.dut.check_sat(cond, [])
+        self.dut.set_constraint(cond)
+        lst = self.dut._get_constraint_list_ref()
+        idx = len(lst)-1
+        wobj = WhenObject(lst, idx, possible)
+        return wobj
+
     def current_cycle(self) -> int:
         assert (self._state_ptr)
         return self.dut._current_cycle(self._state_ptr.branch_idx)
@@ -451,6 +491,13 @@ class async_simulator(object):
             raise RuntimeError("sim.wait_negedge is not in a tracked function")
         assert False # not implemented
         pass
+
+    def __copy__(self):
+        # will not copy 
+        return self
+    def __deepycopy__(self,memo):
+        # will not copy 
+        return self
         
 
 class await_condition(object):
@@ -504,7 +551,24 @@ class stackframe(object):
         result = cls.__new__(cls)
         memo[id(self)] = result
         for k, v in self.__dict__.items():
-            setattr(result, k, copy.copy(v))
+            if k == "localvars":
+                setattr(result, k, dict())
+                for vname,val in self.localvars.items():
+                    if isinstance(val, Dut) or isinstance(val, async_simulator) or isinstance(val, types.ModuleType):
+                        result.localvars[vname] = val # do not copy these
+                    elif isinstance(val, float) or isinstance(val, int) or isinstance(val, str):
+                        result.localvars[vname] = val # no need to copy
+                    elif hasattr(val,"__deepcopy__"):
+                        result.localvars[vname] = copy.deepcopy(val)
+                    elif hasattr(val,"__copy__"):
+                        result.localvars[vname] = copy.copy(val)
+                    else:
+                        print (f'Warning: local variable {vname} is not copied when forking coroutine!')
+                        print (val)
+                        assert False # if this should raise exception, then stop here
+                        result.localvars[vname] = val
+            else:
+                setattr(result, k, copy.copy(v))
         return result
 
 
@@ -586,12 +650,12 @@ class pywasim_local_state(object):
         # new for branch
         self.branch_idx = 0 # initially these coroutines are just for the first branch
         self.finished = False
-        self.sim = self.current_frame.localvars['sim']
+        self.sim:async_simulator = self.current_frame.localvars['sim']
         # setup local vars etc
         # self.current_frame.parse_arg(args, kwargs) no need to do it here, current_frame will invoke automatically
         
     def clone(self, branch_idx): # it returns a passthrough object
-        # this does not coy the associated branch, you must copy separately and associate them with the arg
+        # this does not copy the associated branch, you must copy separately and associate them with the arg
         ret = pywasim_local_state(self.coroutine, self.current_frame) # you don't need to clone args and kwargs because it will not branch at invocation
         ret.current_frame = copy.deepcopy(self.current_frame)  # we need a deep copy here
         ret.stack = copy.deepcopy(self.stack)
@@ -630,7 +694,7 @@ class pywasim_local_state(object):
             self.current_frame.pc += 1 # return to the next stmt
         else:
             self.retval = retval
-            print ('<coroutine finished>')
+            print ('<stack length = 0>')
             self.set_finished()
     
     def step(self):
@@ -702,18 +766,102 @@ class pywasim_local_state(object):
     def _handle_break_continue(self, stmt: ast.AST) -> bool :
         """return value: either break or continue"""
         if isinstance(stmt, ast.Break):
-            assert (self.current_frame.func_or_block == 'block')
+            while self.current_frame.block_kind not in ['for','while']:
+                assert (self.current_frame.func_or_block == 'block')
+                self._pop_stack_frame()
+
             assert (self.current_frame.block_kind in ['for','while'])
             self._pop_stack_frame()
             return True
         
         if isinstance(stmt, ast.Continue):
-            assert (self.current_frame.func_or_block == 'block')
+            while self.current_frame.block_kind not in ['for','while']:
+                assert (self.current_frame.func_or_block == 'block')
+                self._pop_stack_frame()
+
             assert (self.current_frame.block_kind in ['for','while'])
             self.current_frame.pc = len(self.current_frame.code)
             return True
         return False        
 
+    def _check_symbolic_cond(self, cond) -> tuple[bool, bool]: # (maybe_true, maybe_false)
+        maybe_true = self.sim.dut.check_sat(cond, [] )
+        maybe_false = self.sim.dut.check_sat(~cond, [] )
+        return (maybe_true,maybe_false)
+
+    def _handle_symbolic_if(self, stmt:ast.If, cond_val) -> bool:
+        # this is a symbolic condition
+        # we need to check if either is possible 
+        maybe_true, maybe_false = self._check_symbolic_cond(cond_val)
+        print (f'<if(sym): {maybe_true} {maybe_false}>')
+        pushed_stack = False
+        if maybe_true and not maybe_false:
+            # go into the branch
+            assert(stmt.body) # cannot be empty or None
+            self._push_block_frame(stmt.body, block_kind='if', block_node=stmt)
+            self.sim.dut.simulator.add_assumption_interpreted(self.branch_idx, cond_val, "branch cond")
+            pushed_stack = True
+        elif maybe_false and not maybe_true:
+            if stmt.orelse:
+                self._push_block_frame(stmt.orelse, block_kind='if-orelse', block_node=stmt)
+                self.sim.dut.simulator.add_assumption_interpreted(self.branch_idx, ~cond_val, "~branch cond")
+                pushed_stack = True
+        else:
+            assert(maybe_true and maybe_false)
+            # for the false branch, depends on if there is orelse
+            # if there is orelse, then for the other, push that orelse
+            # otherwise, just go around
+            br_idx = self.sim.dut._fork_branch(self.branch_idx) # increment max_branch_idx, must before st.clone()
+            passthrough = self.clone(branch_idx = br_idx) # link the state with the branch
+            self._push_block_frame(stmt.body, block_kind='if', block_node=stmt)
+            self.sim.dut.simulator.add_assumption_interpreted(self.branch_idx, cond_val, "branch cond")
+            pushed_stack = True
+
+            self.sim.dut.simulator.add_assumption_interpreted(br_idx, ~cond_val, "~branch cond")
+            if stmt.orelse:
+                copied_stmt = passthrough.current_frame.get_curr_ast()
+                assert(copied_stmt.orelse)
+                passthrough._push_block_frame(copied_stmt.orelse, block_kind='if-orelse', block_node=copied_stmt)
+            else:
+                passthrough._advance_pc()
+            _all_states.append(passthrough)
+        return pushed_stack
+
+    def _handle_symbolic_while(self, stmt:ast.While, cond_val) -> bool: # return if stack is pushed
+        maybe_true, maybe_false = self._check_symbolic_cond(cond_val)
+        print (f'<while(sym): {maybe_true} {maybe_false}>')
+        pushed_stack = False
+        if maybe_true and not maybe_false:
+            # go into the branch
+            assert(stmt.body) # cannot be empty or None
+            self._push_block_frame(stmt.body, block_kind='while', block_node=stmt)
+            self.sim.dut.simulator.add_assumption_interpreted(self.branch_idx, cond_val, "branch cond")
+            pushed_stack = True
+        elif maybe_false and not maybe_true:
+            if stmt.orelse:
+                self._push_block_frame(stmt.orelse, block_kind='while-orelse', block_node=stmt)
+                self.sim.dut.simulator.add_assumption_interpreted(self.branch_idx, ~cond_val, "~branch cond")
+                pushed_stack = True
+        else:
+            assert(maybe_true and maybe_false)# for the false branch, depends on if there is orelse
+            # if there is orelse, then for the other, push that orelse
+            # otherwise, just go around
+            br_idx = self.sim.dut._fork_branch(self.branch_idx) # increment max_branch_idx, must before st.clone()
+            passthrough = self.clone(branch_idx = br_idx) # link the state with the branch
+            self._push_block_frame(stmt.body, block_kind='while', block_node=stmt)
+            self.sim.dut.simulator.add_assumption_interpreted(self.branch_idx, cond_val, "branch cond")
+            pushed_stack = True
+
+            self.sim.dut.simulator.add_assumption_interpreted(br_idx, ~cond_val, "~branch cond")
+            if stmt.orelse:
+                copied_stmt = passthrough.current_frame.get_curr_ast()
+                assert(isinstance(copied_stmt, ast.While) and copied_stmt.orelse)
+                passthrough._push_block_frame(copied_stmt.orelse, block_kind='while-orelse', block_node=copied_stmt)
+            else:
+                passthrough._advance_pc()
+            _all_states.append(passthrough)
+        return pushed_stack
+        
 
     def _handle_control_flow(self, stmt: ast.AST) -> tuple[bool,bool]:
         """Trace into if/while/for bodies statement-by-statement (and push the stackframe). 
@@ -722,6 +870,10 @@ class pywasim_local_state(object):
             # TODO: later we will try to detect here, if it is a NodeRef type or not (you will need
             # to evaluate it first anyway)
             cond_val = self._eval_expr(stmt.test)
+            if isinstance(cond_val, NodeRef):
+                pushed_stack = self._handle_symbolic_if(stmt, cond_val)
+                return (True,pushed_stack)
+            # else: it is a concrete condition
             pushed_stack = False
             if cond_val:
                 assert(stmt.body) # cannot be empty or None
@@ -735,6 +887,12 @@ class pywasim_local_state(object):
 
         if isinstance(stmt, ast.While):
             cond_val = self._eval_expr(stmt.test)
+
+            if isinstance(cond_val, NodeRef):
+                # handle symbolic condition
+                pushed_stack = self._handle_symbolic_while(stmt, cond_val)
+                return (True,pushed_stack)
+            
             pushed_stack = False
             if not cond_val and stmt.orelse:
                 self._push_block_frame(stmt.orelse, block_kind='while-orelse', block_node=stmt)
@@ -779,7 +937,50 @@ class pywasim_local_state(object):
         print (f'<end of `{block_kind}` block>')
 
         if block_kind in ['while']:
-            if self._eval_expr(block_node.test):
+            # you also need to fork here!
+            cond_val = self._eval_expr(block_node.test)
+            if isinstance(cond_val, NodeRef):
+                maybe_true, maybe_false = self._check_symbolic_cond(cond_val)
+                print (f'<while(sym) end-of-block: {maybe_true} {maybe_false}>')
+                if maybe_true and not maybe_false:
+                    self.sim.dut.simulator.add_assumption_interpreted(self.branch_idx, cond_val, "branch cond")
+                    self.current_frame.pc = 0
+                    return
+                elif maybe_false and not maybe_true:
+                    if block_node.orelse:
+                        self.current_frame.code = block_node.orelse
+                        self.current_frame.block_kind = 'while-orelse'
+                        self.current_frame.pc = 0
+                        self.sim.dut.simulator.add_assumption_interpreted(self.branch_idx, ~cond_val, "~branch cond")
+                        return
+                    else:
+                        self._pop_stack_frame()
+                        return
+                else:
+                    assert(maybe_true and maybe_false)
+                    # if there is orelse, then for the other, push that orelse
+                    # otherwise, just go around
+                    br_idx = self.sim.dut._fork_branch(self.branch_idx) # increment max_branch_idx, must before st.clone()
+                    passthrough = self.clone(branch_idx = br_idx) # link the state with the branch
+                    self.sim.dut.simulator.add_assumption_interpreted(self.branch_idx, cond_val, "branch cond")
+                    self.current_frame.pc = 0
+
+                    self.sim.dut.simulator.add_assumption_interpreted(br_idx, ~cond_val, "~branch cond")
+                    if block_node.orelse:
+                        # copied_stmt = passthrough.current_frame.get_curr_ast() copied_block_node
+                        assert(passthrough.stack[-1].func_or_block == 'block')
+                        copied_block_node = passthrough.stack[-1].block_node
+                        assert(isinstance(copied_block_node, ast.While) and copied_block_node.orelse)
+                        passthrough.current_frame.code = copied_block_node.orelse
+                        passthrough.current_frame.block_kind = 'while-orelse'
+                        passthrough.current_frame.pc = 0
+                    else:
+                        # you may need to pop
+                        passthrough._pop_stack_frame()
+                    _all_states.append(passthrough)
+                return # end of processing
+            # else (it is concrete value)
+            if cond_val:
                 self.current_frame.pc = 0 # loop back here
                 return
             if block_node.orelse:
@@ -887,7 +1088,7 @@ class pywasim_local_state(object):
 
 
     def _disable_var_intepret_if_needed(self, stmt:ast.AST):
-        """This is to ensure that when you can dut.sig.value, it returns the variable for `sig`
+        """This is to ensure that when you call dut.sig.value, it returns the variable for `sig`
            rather than the symbolic expression for `sig` at that cycle.
         """
         if isinstance(stmt, ast.Expr):
