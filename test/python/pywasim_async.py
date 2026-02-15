@@ -128,13 +128,27 @@ class Dut:
         self.simulator.free_init(var_dict)
         self._create_iv_dict(branch_idx = 0)          # create new inputvars
 
-    def set_constraint(self, constr):
+    def make_bool(self, value):
+        assert(value == 0 or value == 1)
+        ntype = self.solver.make_bool()
+        return self.solver.make_constant(value, ntype) # bool value is 0/1
+
+    def make_constant(self, value, width):
+        assert(0 <= value <= 2**width - 1)
+        ntype = self.solver.make_bvsort(width)
+        return self.solver.make_constant(value, ntype)
+        
+    def set_constraint(self, constr, check_constr = False):
         assert (self.curr_branch_idx is not None)
+        if check_constr:
+            can_sat = self.check_sat(constr, [])
+            if not can_sat:
+                raise RuntimeError("The added constraint is unsat or conflicts with existing constraints")
         self.branch_list[self.curr_branch_idx].constraints.append(constr)
         
     def unset_constraint(self, constr):
         assert (self.curr_branch_idx is not None)
-        self.branch_list[self.curr_branch_idx].constraints = [x for x in self.branch_list[self.curr_branch_idx].constraints if x != constr]     # remove this constr totally
+        self.branch_list[self.curr_branch_idx].constraints = [x for x in self.branch_list[self.curr_branch_idx].constraints if hash(x) != hash(constr)]
 
     def _get_constraint_list_ref(self):
         """This function should not be called by others except the simulator"""

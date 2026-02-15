@@ -385,7 +385,7 @@ smt::Term SymbolicSimulatorBranch::interpret_input_and_state_expr_on_curr_frame(
   auto & br = symsim_branches[branch_idx];
   if (!_expr_only_sv(expr)){
     const auto & sv_mapping = br.trace_.back();
-    assert(br.history_choice_.size() != 0);
+    // assert(br.history_choice_.size() != 0);
     auto subs_mapping = sv_mapping;  // make a copy
     subs_mapping.insert(iv_map.begin(), iv_map.end());
     return solver_->substitute(expr, subs_mapping);
