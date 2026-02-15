@@ -14,6 +14,11 @@ sys.path.append(build_dir)
 from pywasimbase import *
 # TransSys, Simsimulator
 
+_debug = False
+def debug_log(*args, **kwargs):
+    if _debug:
+        print(*args, **kwargs)
+
 _all_coroutine = [] # List of `pywasim_coroutine`
 _all_states = []
 _all_functions = {} # a name:str->ast map (so you don't need to re-parse functions)
@@ -38,11 +43,11 @@ class Dut_Branch:
 class Dut:
     # DUT now is having multiple branches
     def __init__(self, btorname):
-        self.ts = TransSys(btorname)
+        self.ts = TransSys(btorname) # this is the C++ class
         self.simulator = Symsimbranch(self.ts) # this is the C++ class
         self.solver = self.simulator.get_solver()
         
-        self._do_not_interpret_var = False # if true, will not return SignalProxy
+        self._do_not_interpret_var = False # if true, will return VarProxy. If false return SignalProxy
         self.inputvars_list = self.ts.inputvars()
         self.statevars_list = self.ts.statevars()
 
@@ -162,7 +167,7 @@ class Dut:
             #branch.iv_term_dict.update(branch.iv_term_dict_default) # FIXME: this does not look correct
             self.simulator.set_input(iv_term_dict, asmpt, branch_idx)
             self.simulator.sim_one_step(branch_idx)
-            print (f'<dut.step br#{branch_idx} cycle:{self._current_cycle(branch_idx)}>')
+            debug_log (f'<dut.step br#{branch_idx} cycle:{self._current_cycle(branch_idx)}>')
         self._create_iv_dict(branch_idx)
     
     # not use
@@ -206,7 +211,7 @@ class Dut:
         return not res  # unsat -> return True
 
     def check_sat(self, asst, asmpts):
-        print('<dut.check_sat>')
+        debug_log('<dut.check_sat>')
         assert (self.curr_branch_idx is not None)
         asmpts_all = self.simulator.all_assumptions(self.curr_branch_idx)
         asmpts_all.extend(asmpts)
@@ -223,10 +228,10 @@ class Dut:
             print("check assertion result: pass!")
         return not res
 
-    def _check_assertion(self, assertion):
+    def _check_assertion(self, assertion: NodeRef):
         # should not be called directly by the user
         # because it is not using an branch condition/branch local constraints
-        print(f"assertion: {assertion.to_string()}")
+        debug_log(f"assertion: {assertion.to_string()}")
 
         self.solver.push()
         formula = ~assertion    # make_term(not, assertion)
@@ -424,34 +429,34 @@ class async_simulator(object):
     def check_sat(self, expr, asmpts = []):
         assert (self._state_ptr)
         curr_branch_idx = self._state_ptr.branch_idx
-        print('<solver call>')
+        debug_log('<solver call>')
         can_sat = self.dut.check_sat(expr, asmpts)
-        print('<end solver call>')
+        debug_log('<end solver call>')
         if can_sat:
-            print ('<may sat>')
+            debug_log ('<may sat>')
         else:
-            print ('<may not sat>')
+            debug_log ('<may not sat>')
         return can_sat        
 
 
     def check_assertion(self, expr, asmpts = []):    # check_valid
         assert (self._state_ptr)
         curr_branch_idx = self._state_ptr.branch_idx
-        print('<solver call>')
+        debug_log('<solver call>')
         # we can use this func to simplify the expr first
         # simplify_expr = self.dut.expr_simplify_ite(expr, self._state_ptr.branch_cond)
         # can_sat = self.dut.check_sat(~simplify_expr, self._state_ptr.branch_cond)
         can_sat = self.dut.check_sat(~expr, asmpts)
-        print('<end solver call>')
+        debug_log('<end solver call>')
         if can_sat:
             # the behavior here should be controllable
             # it should also be debuggable
             # maybe dump waveform
-            print(f"<Error branch: {curr_branch_idx}>")
+            debug_log(f"<Error branch: {curr_branch_idx}>")
             raise AssertionError('sim.check_assertion failed')
             print("sim.check_assertion failed")
             return False
-        print("<sim.check_assertion pass>")
+        debug_log("<sim.check_assertion pass>")
         return True        
         
     def _set_stateptr(self, ptr):
@@ -550,6 +555,16 @@ class stackframe(object):
         else: # no need to parse arg for block stackframe
             self.pc = 0
 
+    def clone_except_localvar(self, new_localvars):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        for k, v in self.__dict__.items():
+            if k == "localvars":
+                setattr(result, k, new_localvars)
+            else:
+                setattr(result, k, copy.copy(v))
+        return result
+
     def __deepcopy__(self, memo):
         cls = self.__class__
         result = cls.__new__(cls)
@@ -612,12 +627,14 @@ class stackframe(object):
 #    return {**globals(), **getattr(sys.modules[__name__], "_extra_globals", {})}
 
 def check_func_call(stmt:ast.AST) -> bool:
+    """check if there is a function call in stmt"""
     for node in ast.walk(stmt):
         if isinstance(node, ast.Call):
             return True
     return False
 
 def need_to_trace(callast:ast.Call) -> bool:
+    """determine if we trace into a certain function call"""
     for arg in callast.args:
         if isinstance(arg, ast.Name):
             if arg.id in ['sim','dut']:
@@ -646,7 +663,7 @@ def eval_args(callast:ast.Call, localvars, globalvars): # return args and kwargs
 class pywasim_local_state(object):
     def __init__(self, coroutine, initial_stackframe:stackframe):
         self.coroutine = coroutine
-        self.current_frame = initial_stackframe
+        self.current_frame: stackframe = initial_stackframe
         self.stack = [] # list of (targetList : list or None, stackframe)
         # for block stackframe, targetList is None
         self.await_cond = None  # await condition could be clock(n)
@@ -661,8 +678,30 @@ class pywasim_local_state(object):
     def clone(self, branch_idx): # it returns a passthrough object
         # this does not copy the associated branch, you must copy separately and associate them with the arg
         ret = pywasim_local_state(self.coroutine, self.current_frame) # you don't need to clone args and kwargs because it will not branch at invocation
-        ret.current_frame = copy.deepcopy(self.current_frame)  # we need a deep copy here
-        ret.stack = copy.deepcopy(self.stack)
+        # HZ: when you copy the stack frame, you need to be careful !!!
+        #     this is because in the old frame/stack, there are localvars stored by references
+        #     you need to make sure, they are still kept by references
+        #     Otherwise, the localvars at different blocks will not be preserved
+        if len(self.stack) == 0:
+            # this is the simplest case
+            ret.current_frame = copy.deepcopy(self.current_frame)  # we need a deep copy here
+            ret.stack = []
+        else:
+            # start from the stack 0
+            ret.stack = [copy.deepcopy(self.stack[0])] # copy the 
+            for i in range(1,len(self.stack)):
+                target = copy.copy(self.stack[i][0])
+                if self.stack[i][1].localvars is self.stack[i-1][1].localvars:
+                    stframe = self.stack[i][1].clone_except_localvar(ret.stack[i-1][1].localvars)
+                    # keep the localvars to refer to the prior one in the stack
+                else:
+                    stframe = copy.deepcopy(self.stack[i][1])
+                ret.stack.append((target,stframe))
+            if self.current_frame.localvars is self.stack[-1][1].localvars:
+                ret.current_frame = self.current_frame.clone_except_localvar(ret.stack[-1][1].localvars)
+            else:
+                ret.current_frame = copy.deepcopy(self.current_frame)
+
         ret.await_cond = None  # you don't need to deepcopy await_cond
         # this is because when you branch, one thread will have its await set to None to let it continue
         # new for branch
@@ -698,7 +737,7 @@ class pywasim_local_state(object):
             self.current_frame.pc += 1 # return to the next stmt
         else:
             self.retval = retval
-            print ('<stack length = 0>')
+            debug_log ('<stack length = 0>')
             self.set_finished()
     
     def step(self):
@@ -715,11 +754,11 @@ class pywasim_local_state(object):
             else:
                 self._return_encountered(stmt=None) # may change self.current_frame, self.stack, self.current_frame.pc etc.
         if self.is_finished():
-            print ('<coroutine finished>')
+            debug_log ('<coroutine finished>')
             self._clear_sim_setting()
             return
         assert (self.current_frame.pc < len(self.current_frame.code))
-        print(f'<coroutine.pc:{self.current_frame.pc} , stack size:{len(self.stack)}>')
+        debug_log(f'<coroutine.pc:{self.current_frame.pc} , stack size:{len(self.stack)}>')
 
         # ---------------------------------------------
         stmt = self.current_frame.get_curr_ast()
@@ -797,7 +836,7 @@ class pywasim_local_state(object):
         # this is a symbolic condition
         # we need to check if either is possible 
         maybe_true, maybe_false = self._check_symbolic_cond(cond_val)
-        print (f'<if(sym): {maybe_true} {maybe_false}>')
+        debug_log (f'<if(sym): {maybe_true} {maybe_false}>')
         pushed_stack = False
         if maybe_true and not maybe_false:
             # go into the branch
@@ -833,7 +872,7 @@ class pywasim_local_state(object):
 
     def _handle_symbolic_while(self, stmt:ast.While, cond_val) -> bool: # return if stack is pushed
         maybe_true, maybe_false = self._check_symbolic_cond(cond_val)
-        print (f'<while(sym): {maybe_true} {maybe_false}>')
+        debug_log (f'<while(sym): {maybe_true} {maybe_false}>')
         pushed_stack = False
         if maybe_true and not maybe_false:
             # go into the branch
@@ -938,14 +977,14 @@ class pywasim_local_state(object):
         block_node = self.current_frame.block_node # getattr(self.current_frame, 'block_node', None)
         assert (block_kind in ['while', 'while-orelse', 'if', 'if-orelse', 'for', 'for-orelse'])
         # if it is while loop, recheck the condition and maybe look back
-        print (f'<end of `{block_kind}` block>')
+        debug_log (f'<end of `{block_kind}` block>')
 
         if block_kind in ['while']:
             # you also need to fork here!
             cond_val = self._eval_expr(block_node.test)
             if isinstance(cond_val, NodeRef):
                 maybe_true, maybe_false = self._check_symbolic_cond(cond_val)
-                print (f'<while(sym) end-of-block: {maybe_true} {maybe_false}>')
+                debug_log (f'<while(sym) end-of-block: {maybe_true} {maybe_false}>')
                 if maybe_true and not maybe_false:
                     self.sim.dut.simulator.add_assumption_interpreted(self.branch_idx, cond_val, "branch cond")
                     self.current_frame.pc = 0
@@ -1213,7 +1252,7 @@ def async_one_step(sim, dut):
                 continue
 
             #else
-            print(f'<coroutine #{idx}>')
+            debug_log(f'<coroutine #{idx}>')
             all_finished = False
 
             if st.await_cond is not None and st.await_cond.execthread is not None:
@@ -1228,7 +1267,7 @@ def async_one_step(sim, dut):
                 any_runnable = True
 
     if all_finished:
-        print('<all finished>')
+        debug_log('<all finished>')
         sim.finish()
         return
     
@@ -1236,7 +1275,7 @@ def async_one_step(sim, dut):
     # if symexpr == condition
     # then we will need branch before step
 
-    print('<dut.step>')
+    debug_log('<dut.step>')
     stepped_branches = set()
     for idx,st in enumerate(_all_states):
         if st.is_finished():
@@ -1255,7 +1294,7 @@ def async_one_step(sim, dut):
         if st.is_finished():
             continue
 
-        print(f'<coroutine #{idx} post>')
+        debug_log(f'<coroutine #{idx} post>')
         curr_branch_idx = st.branch_idx
         # assert (st.await_cond) # is not None
         # as we append passthrough to _all_states, its await_condition may be None 
@@ -1278,7 +1317,7 @@ def async_one_step(sim, dut):
             maybe_false = dut.check_sat(~cond_curr, [] )
             dut._set_curr_branch(None)
 
-            print('<branch:',maybe_true, maybe_false,'>')
+            debug_log('<branch:',maybe_true, maybe_false,'>')
             if maybe_true and not maybe_false:
                 st.await_cond = None
                 dut.simulator.add_assumption_interpreted(curr_branch_idx, cond_curr, "branch cond")
