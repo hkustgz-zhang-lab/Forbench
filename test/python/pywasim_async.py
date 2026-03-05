@@ -599,6 +599,7 @@ class stackframe(object):
                         print (f'Warning: local variable {vname} is not copied when forking coroutine!')
                         print (val)
                         assert False # if this should raise exception, then stop here
+                        # if you are sure no copy is okay, you can disable the assertion
                         result.localvars[vname] = val
             else:
                 setattr(result, k, copy.copy(v))

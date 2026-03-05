@@ -234,6 +234,10 @@ namespace wasim {
 
     SolverRef * get_solver() const { return new SolverRef(solver); }
 
+    NodeRef* python_copy() const { // will be used in `__copy__`
+      return new NodeRef(*this);
+    }
+
     NodeRef* complement() const
     {
         return _unOp(smt::PrimOp::Not, smt::PrimOp::BVNot, "complement bv/bool");
@@ -1877,6 +1881,7 @@ BOOST_PYTHON_MODULE(pywasimbase)
     .def("get_solver", &NodeRef::get_solver, return_value_policy<manage_new_object>() )
     .def("get_vars", &NodeRef::get_vars)
     .def("to_smt2_fun", &NodeRef::to_smt2_fun)
+    .def("__copy__", &NodeRef::python_copy, return_value_policy<manage_new_object>() )
     .def("__invert__", &NodeRef::complement, return_value_policy<manage_new_object>() )
     .def("__neg__", &NodeRef::negate, return_value_policy<manage_new_object>() )
     .def("__and__", &NodeRef::logicalAnd, return_value_policy<manage_new_object>() )
