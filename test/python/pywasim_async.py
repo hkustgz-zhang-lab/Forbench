@@ -25,6 +25,35 @@ _all_functions = {} # a name:str->ast map (so you don't need to re-parse functio
 # HZ: I don't like the use of these global vars...
 # cur_branch_idx = 0  # current running branch, init 0 / every state has a branch_idx
 
+
+class PywasimAssertionFailure(Exception):
+    def __init__(self, expr:NodeRef, asmpts=None, branch_idx=None, message='sim.check_assertion failed'):
+        super().__init__(message)
+        self.expr = expr
+        self.asmpts = list(asmpts) if asmpts is not None else []
+        self.branch_idx = branch_idx
+        self.source_file = None  # will be filled in when `step` catches it
+        self.source_line = None
+        self.source_col = None
+        self.source_func_name = None
+
+    def set_source_location(self, source_file, source_line, source_col, source_func_name):
+        self.source_file = source_file
+        self.source_line = source_line
+        self.source_col = source_col
+        self.source_func_name = source_func_name
+
+    def __str__(self):
+        msg = super().__str__()
+        if self.source_file is not None and self.source_line is not None:
+            location = f"{self.source_file}:{self.source_line}"
+            if self.source_col is not None:
+                location += f":{self.source_col}"
+            if self.source_func_name:
+                location += f" in {self.source_func_name}"
+            return f"{msg} ({location})"
+        return msg
+
 class Dut_Branch:
     def __init__(self):
         """will create a copy of all the arguments"""
@@ -470,7 +499,7 @@ class async_simulator(object):
             # it should also be debuggable
             # maybe dump waveform
             debug_log(f"<Error branch: {curr_branch_idx}>")
-            raise AssertionError('sim.check_assertion failed')
+            raise PywasimAssertionFailure(expr=expr, asmpts=asmpts, branch_idx=curr_branch_idx)
             print("sim.check_assertion failed")
             return False
         debug_log("<sim.check_assertion pass>")
@@ -534,7 +563,8 @@ class await_condition(object):
     # you will need to test if this is ready
 
 class stackframe(object):
-    def __init__(self, localvars, func_def, code, args, kwargs, block_kind = None, block_node = None, loop_iter = None):
+    def __init__(self, localvars, func_def, code, args, kwargs, block_kind = None, block_node = None, loop_iter = None,
+                 source_file = None, source_start_lineno = None, source_func_name = None):
         # func_or_block == "func" or 'block' depends on if (func_def is None)
         self.func_or_block = 'block' if func_def is None else 'func'
         if func_def is None:
@@ -567,10 +597,28 @@ class stackframe(object):
         assert(isinstance(self.code, list)) # it must be a list
 
         self.func_def = func_def # should be assigned to coroutine.astnodes.body[0]
+        self.source_file = source_file
+        self.source_start_lineno = source_start_lineno
+        self.source_func_name = source_func_name
         if func_def is not None:
             self.parse_arg(args, kwargs)
         else: # no need to parse arg for block stackframe
             self.pc = 0
+
+    def get_curr_source_location(self, stmt: ast.AST | None = None):
+        """if `stmt` is None, extract the location of the current stmt
+        returns a tuple (filename, line, col, function)"""
+        if stmt is None:
+            stmt = self.get_curr_ast()
+        if self.source_file is None or self.source_start_lineno is None:
+            return (None, None, None, self.source_func_name)
+        stmt_lineno = getattr(stmt, 'lineno', None)
+        stmt_col = getattr(stmt, 'col_offset', None)
+        if stmt_lineno is None:
+            return (self.source_file, None, None, self.source_func_name)
+        source_line = self.source_start_lineno + stmt_lineno - 1
+        source_col = None if stmt_col is None else stmt_col + 1
+        return (self.source_file, source_line, source_col, self.source_func_name)
 
     def clone_except_localvar(self, new_localvars):
         cls = self.__class__
@@ -795,14 +843,16 @@ class pywasim_local_state(object):
             # no need to advance pc here
             return
 
-        func_def, call_ast, targets = self._detect_function_trace(stmt)
+        func_def, call_ast, targets, callee_source = self._detect_function_trace(stmt)
         if func_def is not None: # this means we need to trace assert (func_def is not None)
             # follow into the function call
             self.stack.append((targets, self.current_frame)) # does not change pc here, will return to pc+1
             args,kwargs = eval_args(call_ast, self.current_frame.localvars, self.sim.globalvars)
             # EVAL val
             # Below creates a function stackframe
-            self.current_frame = stackframe(localvars={}, func_def=func_def,code=func_def.body, args=args, kwargs=kwargs)
+            self.current_frame = stackframe(localvars={}, func_def=func_def,code=func_def.body, args=args, kwargs=kwargs,
+                                            source_file=callee_source[0], source_start_lineno=callee_source[1],
+                                            source_func_name=callee_source[2])
             self._clear_sim_setting()
             return
 
@@ -817,7 +867,15 @@ class pywasim_local_state(object):
             tmp_stmt = ast.fix_missing_locations(tmp_stmt)  # add this to make it more robust
             global_env = self.sim.globalvars
             # exec(compile(tmp_stmt, "<ast>", "exec"), {}, self.local)
-            exec(compile(tmp_stmt, "<ast>", "exec"), global_env, self.current_frame.localvars) # allow to get global env in test file
+            try:
+                exec(compile(tmp_stmt, "<ast>", "exec"), global_env, self.current_frame.localvars) # allow to get global env in test file
+            except PywasimAssertionFailure as err:
+                source_file, source_line, source_col, source_func_name = self.current_frame.get_curr_source_location(stmt)
+                err.set_source_location(source_file, source_line, source_col, source_func_name)
+                self._clear_sim_setting()
+                raise
+                # TODO: add our assertion handling code here 
+                # for example, dump waveform, start debugging etc.
             self._advance_pc()
         self._clear_sim_setting()
 
@@ -1097,12 +1155,14 @@ class pywasim_local_state(object):
         compiled = compile(ast.Expression(body=expr), "<ast>", "eval")
         return eval(compiled, global_env, self.current_frame.localvars)
 
-    def _detect_function_trace(self, stmt:ast.AST): # returns func_def, call_ast, targets: list of expr
+    def _detect_function_trace(self, stmt:ast.AST): # returns func_def, call_ast, targets: list of expr, callee_source
         """
         This decides if we are going to trace into the function or not,
         based on some critera:
         1. ret = f(...)
         2. the argument list contains sim or dut
+
+        returns: func_def, call_ast, targets (the LHS of `ret = f(...)`), callee_source
         """
         if isinstance(stmt, ast.Expr) or isinstance(stmt, ast.Assign):
             if isinstance(stmt, ast.Assign):
@@ -1111,6 +1171,7 @@ class pywasim_local_state(object):
             else:
                 targets = []
                 val = stmt.value
+            callee_source = (None, None, None)
             
             # # we can use the bind function to perform assignment
             # if targets and not isinstance(targets[0], ast.Name):
@@ -1128,6 +1189,9 @@ class pywasim_local_state(object):
                         func_name = call_ast.func.id
                         func_obj = global_env.get(func_name, None)
                         if inspect.isfunction(func_obj):
+                            callee_file = inspect.getsourcefile(func_obj) or inspect.getfile(func_obj)
+                            _, callee_start_lineno = inspect.getsourcelines(func_obj)
+                            callee_source = (callee_file, callee_start_lineno, func_obj.__name__)
                             if func_name in _all_functions:
                                 func_def = _all_functions[func_name]
                                 follow_func_call = True
@@ -1143,9 +1207,9 @@ class pywasim_local_state(object):
                 if follow_func_call:
                     # maintain stack etc.
                     assert (func_def is not None)
-                    return func_def, call_ast, targets
+                    return func_def, call_ast, targets, callee_source
         # else:
-        return (None, None, None)
+        return (None, None, None, (None, None, None))
 
 
     def _disable_var_intepret_if_needed(self, stmt:ast.AST):
@@ -1210,11 +1274,14 @@ class pywasim_local_state(object):
 # create pointers
 class pywasim_coroutine(object):
     """ The coroutine class, when invoked, will update `_all_states` to register an invocation """
-    def __init__(self, lines):
+    def __init__(self, lines, source_file = None, source_start_lineno = None, source_func_name = None):
         self.lines = lines.split(sep = '\n')
         self.astnodes = ast.parse(lines)
         assert (len(self.astnodes.body) == 1)
         self.funbody = self.astnodes.body[0].body
+        self.source_file = source_file
+        self.source_start_lineno = source_start_lineno
+        self.source_func_name = source_func_name
         # print (self.funbody[3])
         
     def invoke(self, *args, **kwargs):
@@ -1222,13 +1289,19 @@ class pywasim_coroutine(object):
             pywasim_local_state(  \
                 coroutine = self,  \
                 initial_stackframe = \
-                    stackframe(localvars={}, func_def=self.astnodes.body[0],code=self.funbody, args=args, kwargs=kwargs)))
+                    stackframe(localvars={}, func_def=self.astnodes.body[0],code=self.funbody, args=args, kwargs=kwargs,
+                               source_file=self.source_file, source_start_lineno=self.source_start_lineno,
+                               source_func_name=self.source_func_name)))
         return _all_states[-1]  # you can use sim.wait_task() on this
 
 def register_task(func):
     """register a function as a coroutine. Will update `_all_coroutine`"""
     code = inspect.getsource(func)
-    _all_coroutine.append(pywasim_coroutine(lines = code))
+    source_file = inspect.getsourcefile(func) or inspect.getfile(func)
+    _, source_start_lineno = inspect.getsourcelines(func)
+    _all_coroutine.append(pywasim_coroutine(lines = code, source_file = source_file,
+                                            source_start_lineno = source_start_lineno,
+                                            source_func_name = func.__name__))
     l = len(_all_coroutine)
     def wrapper(*args, **kwargs):
         _all_coroutine[l-1].invoke(*args, **kwargs)
