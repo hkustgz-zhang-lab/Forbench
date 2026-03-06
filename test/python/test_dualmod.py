@@ -7,10 +7,10 @@ build_dir = os.path.join(parent_dir, 'build')
 sys.path.append(build_dir)
 
 import pywasimbase
-ts = pywasimbase.TransSys('pipe.btor2','A::')
+ts = pywasimbase.TransSys('../../design/test/pipe.btor2','A::')
 
 slv = ts.get_solver()
-ts2 = pywasimbase.TransSys('pipe.btor2', slv, 'B::')
+ts2 = pywasimbase.TransSys('../../design/test/pipe.btor2', slv, 'B::')
 
 updates = ts.state_updates()
 for s,e in updates.items():
