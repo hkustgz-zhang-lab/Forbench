@@ -13,7 +13,7 @@ if [ ! -d "$DEPS/glog" ]; then
     cd glog
     git checkout -f $GLOG_VERSION
     mkdir -p "$DEPS/glog/install"
-    cmake -DCMAKE_INSTALL_PREFIX="$DEPS/glog/install" -S . -B build -G "Unix Makefiles" -DBUILD_SHARED_LIBS=OFF 
+    cmake -DCMAKE_INSTALL_PREFIX="$DEPS/glog/install" -S . -B build -G "Unix Makefiles" -DBUILD_SHARED_LIBS=OFF -DWITH_GFLAGS=OFF
     cmake --build build
     cd build
     make install
