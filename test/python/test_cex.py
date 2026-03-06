@@ -7,7 +7,9 @@ def run1(sim, dut, pywasim):  #
     dut.start.value = 1
     sim.wait_cond(dut.valid.value == 1)
     # this is expected to fail
-    x = 1; y=x-x; z=x/y
+    x = 1
+    y=x-x
+    z=x/1
     sim.check_assertion(dut.result.value == 0)
 
 dut = pywasim.Dut('../../design/asynctest/mul/mul.btor2')

@@ -54,6 +54,34 @@ class PywasimAssertionFailure(Exception):
             return f"{msg} ({location})"
         return msg
 
+
+class PywasimTrackedTaskError(Exception):
+    def __init__(self, original_exception, source_file=None, source_line=None, source_col=None,
+                 source_func_name=None, branch_idx=None):
+        self.original_exception = original_exception
+        self.source_file = source_file
+        self.source_line = source_line
+        self.source_col = source_col
+        self.source_func_name = source_func_name
+        self.branch_idx = branch_idx
+        original_type = type(original_exception).__name__
+        original_msg = str(original_exception)
+        message = f"{original_type}: {original_msg}" if original_msg else original_type
+        super().__init__(message)
+
+    def __str__(self):
+        msg = super().__str__()
+        if self.source_file is not None and self.source_line is not None:
+            location = f"{self.source_file}:{self.source_line}"
+            if self.source_col is not None:
+                location += f":{self.source_col}"
+            if self.source_func_name:
+                location += f" in {self.source_func_name}"
+            msg = f"{msg} ({location})"
+        if self.branch_idx is not None:
+            msg = f"{msg} [branch {self.branch_idx}]"
+        return msg
+
 class Dut_Branch:
     def __init__(self):
         """will create a copy of all the arguments"""
@@ -867,15 +895,35 @@ class pywasim_local_state(object):
             tmp_stmt = ast.fix_missing_locations(tmp_stmt)  # add this to make it more robust
             global_env = self.sim.globalvars
             # exec(compile(tmp_stmt, "<ast>", "exec"), {}, self.local)
+            compile_filename = self.current_frame.source_file or "<ast>"
+            source_file, source_line, source_col, source_func_name = self.current_frame.get_curr_source_location(stmt)
+            line_offset = 0 if self.current_frame.source_start_lineno is None else self.current_frame.source_start_lineno - 1
             try:
-                exec(compile(tmp_stmt, "<ast>", "exec"), global_env, self.current_frame.localvars) # allow to get global env in test file
+                if line_offset:
+                    ast.increment_lineno(tmp_stmt, line_offset)
+                    # ast.increment_lineno modify also the line in stmt. We will need to fix it back
+                    # because this is also the object stores on the stack
+                exec(compile(tmp_stmt, compile_filename, "exec"), global_env, self.current_frame.localvars) # allow to get global env in test file
             except PywasimAssertionFailure as err:
-                source_file, source_line, source_col, source_func_name = self.current_frame.get_curr_source_location(stmt)
                 err.set_source_location(source_file, source_line, source_col, source_func_name)
                 self._clear_sim_setting()
                 raise
                 # TODO: add our assertion handling code here 
                 # for example, dump waveform, start debugging etc.
+            except Exception as err:
+                wrapped_err = PywasimTrackedTaskError(
+                    original_exception=err,
+                    source_file=source_file,
+                    source_line=source_line,
+                    source_col=source_col,
+                    source_func_name=source_func_name,
+                    branch_idx=self.branch_idx)
+                self._clear_sim_setting()
+                raise wrapped_err from err
+            finally:
+                # This is needed, because 
+                if line_offset:
+                    ast.increment_lineno(tmp_stmt, -line_offset)
             self._advance_pc()
         self._clear_sim_setting()
 
