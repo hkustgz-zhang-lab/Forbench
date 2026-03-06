@@ -8,8 +8,6 @@ def run1(sim, dut, pywasim):  #
     sim.wait_cycle()
     dut.start.value = 0
     triggered = False
-    # 2 questions: why sim.check_assertion has to be inside
-    # why triggered not ... ?
     # simplier way to write string as assertions f"`a0` == {i}"   ,  "dut.result == {3'b0,`a0`}*{3'b0,`b0`}"
     # configuration? 
     # coroutine id: python function name & branch id
@@ -21,9 +19,9 @@ def run1(sim, dut, pywasim):  #
             sim.check_assertion(dut.result.value == pywasim.zero_extend(sim.get_var('a0'),3)*pywasim.zero_extend(sim.get_var('b0'),8))
             triggered = True
         sim.wait_cycle()
-        print ('i=',i,  'branch id=',dut.curr_branch_idx, '  triggered=',triggered)
+        print ('i=',i,  'branch id=', sim.get_current_branch_id(), '  triggered=',triggered)
 
-    print ('eof branch id=',dut.curr_branch_idx, '  triggered=',triggered)
+    print ('eof branch id=', sim.get_current_branch_id(), '  triggered=',triggered)
     assert triggered
         
     # while True:

@@ -2,7 +2,7 @@ from pywasim import Dut
 
 
 if __name__ == "__main__":
-    dut = Dut('pipe.btor2')     # create dut
+    dut = Dut('../../design/test/pipe.btor2')     # create dut
 
     # init dut
     dut.set_init()              # init state value

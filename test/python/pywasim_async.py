@@ -452,6 +452,9 @@ class async_simulator(object):
             debug_log ('<may not sat>')
         return can_sat        
 
+    def get_current_branch_id(self):
+        assert (self._state_ptr)
+        return self._state_ptr.branch_idx
 
     def check_assertion(self, expr, asmpts = []):    # check_valid
         assert (self._state_ptr)
@@ -1236,6 +1239,7 @@ def run_later(func, *args, **kwargs) -> None:
 
 def start_loop(sim, dut, bound = -1):
     if len(_all_states) == 0:
+        print ('No task invoked. Nothing to run.')
         return
 
     if sim.dut is not dut:
