@@ -131,7 +131,7 @@ void SymbolicSimulator::free_init(const smt::UnorderedTermMap & var_assignment) 
   for (const auto & v : svar_) {
     if (var_assignment_ref.find(v) == var_assignment_ref.end()) {
       var_assignment_ref[v] =
-          new_var(v->get_sort()->get_width(), v->to_string(), false);
+          new_var(v->get_sort(), v->to_string(), false);
     }
   }
   if (!_expr_only_sv(ts_.init()))
@@ -151,7 +151,7 @@ void SymbolicSimulator::init(
   for (const auto & v : svar_) {
     if (var_assignment_ref.find(v) == var_assignment_ref.end()) {
       var_assignment_ref[v] =
-          new_var(v->get_sort()->get_width(), v->to_string(), false);
+          new_var(v->get_sort(), v->to_string(), false);
     }
   }
 
@@ -234,7 +234,7 @@ void SymbolicSimulator::set_input(const smt::UnorderedTermMap & invar_assign,
     }
     if (c.var_assign_.find(v) == c.var_assign_.end()) {
       c.var_assign_[v] =
-          new_var(v->get_sort()->get_width(), v->to_string(), true);
+          new_var(v->get_sort(), v->to_string(), true);
     }
   }
   const auto & invar_assign_all = c.var_assign_;
@@ -358,13 +358,12 @@ void SymbolicSimulator::sim_one_step()
 //   history_assumptions_interp_.push_back({});
 // }
 
-smt::Term SymbolicSimulator::new_var(int bitwdth,
+smt::Term SymbolicSimulator::new_var(smt::Sort sort,
                                     const std::string & vname /*"=var"*/,
                                     bool x /*=true*/)
 {
   std::string n = x ? vname + "X" : vname;
-  auto symb_sort = solver_->make_sort(smt::BV, bitwdth);
-  smt::Term symb = free_make_symbol(n, symb_sort, name_cnt_, solver_);
+  smt::Term symb = free_make_symbol(n, sort, name_cnt_, solver_);
 
   if (x) Xvar_.insert(symb);
   return symb;

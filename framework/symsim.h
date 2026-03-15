@@ -64,7 +64,7 @@ class SymbolicSimulator
    * @param x
    * @return smt::Term
    */
-  smt::Term new_var(int bitwdth,
+  smt::Term new_var(smt::Sort sort,
                     const std::string & vname = "var",
                     bool x = true);
 
