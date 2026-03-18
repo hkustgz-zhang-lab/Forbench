@@ -1,0 +1,10 @@
+read_verilog -formal RiscV32Core.v
+prep -top RiscV32Core
+async2sync; dffunmap
+flatten
+memory -nordff
+hierarchy -check
+setundef -undriven -init -expose
+sim -clock clk -reset reset -rstlen 10 -n 10 -w RiscV32Core
+write_btor -s rv32.btor2
+
