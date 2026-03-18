@@ -527,6 +527,8 @@ class async_simulator(object):
             # it should also be debuggable
             # maybe dump waveform
             debug_log(f"<Error branch: {curr_branch_idx}>")
+            iv_term_dict = self.dut.branch_list[curr_branch_idx].iv_term_dict
+            self.dut.simulator.dump_waveform("cex.vcd", iv_term_dict, True, curr_branch_idx)
             raise PywasimAssertionFailure(expr=expr, asmpts=asmpts, branch_idx=curr_branch_idx)
             print("sim.check_assertion failed")
             return False
