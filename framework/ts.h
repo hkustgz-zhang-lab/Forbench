@@ -183,6 +183,8 @@ class TransitionSystem
 
   void add_prop(const smt::Term & p) { propvec_.push_back(p); }
 
+  void record_output(const smt::Term & t) { output_terms_.insert(t); }
+
   /* Gives a term a name
    *   This can be used to track particular values in a witness
    * @param name the (unique) name to give the term
@@ -282,6 +284,8 @@ class TransitionSystem
   const smt::UnorderedTermSet & statevars() const { return statevars_; };
 
   const smt::UnorderedTermSet & inputvars() const { return inputvars_; };
+
+  const smt::UnorderedTermSet & output_terms() const { return output_terms_; };
 
   /* Returns the initial state constraints
    * @return a boolean term constraining the initial state
@@ -556,6 +560,10 @@ class TransitionSystem
 
   // system inputs
   smt::UnorderedTermSet inputvars_;
+
+  // system outputs (there are not necessary variables)
+  // because we don't create extra variables for them
+  smt::UnorderedTermSet output_terms_;
 
   // mapping from names to terms
   std::unordered_map<std::string, smt::Term> named_terms_;

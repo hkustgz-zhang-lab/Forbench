@@ -1231,6 +1231,14 @@ namespace wasim {
       return ret;
     }
 
+    boost::python::list output_terms() const { 
+      boost::python::list ret;
+      for(const auto & sv : sptr->output_terms()) {
+        ret.append(new NodeRef(sv, sptr->get_solver()));
+      }
+      return ret;
+    }
+
     boost::python::dict init_constants() const {
       boost::python::dict ret;
       for (const auto & sv_update : sptr->init_constants()) {
@@ -2087,6 +2095,7 @@ BOOST_PYTHON_MODULE(pywasimbase)
     .def("get_solver", &TransSys::get_solver, return_value_policy<manage_new_object>())
     .def("statevars", &TransSys::statevars)
     .def("inputvars", &TransSys::inputvars)
+    .def("output_terms", &TransSys::output_terms)
     .def("state_updates", &TransSys::state_updates)
     .def("named_terms", &TransSys::named_terms)
     .def("constraints", &TransSys::constraints)

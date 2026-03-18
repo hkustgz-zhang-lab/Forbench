@@ -347,6 +347,7 @@ void BTOR2Encoder::parse(const std::string filename)
         ts_.name_term("_out_" + symbol_, termargs_[0]);
       }
       terms_[l_->id] = termargs_[0];
+      ts_.record_output(termargs_[0]);
     } else if (l_->tag == BTOR2_TAG_sort) {
       switch (l_->sort.tag) {
         case BTOR2_TAG_SORT_bitvec: {
