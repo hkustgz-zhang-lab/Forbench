@@ -11,6 +11,7 @@ if __name__ == "__main__":
     dut.a.value = "a1"          # set input value
     dut.b.value = "b1"
     a1 = dut.a.value
+    b1 = dut.b.value
     dut.step()                  # sim one step
 
     # next cycle
@@ -25,3 +26,6 @@ if __name__ == "__main__":
     out = dut.out.value
     # assert
     dut.check_assertion(out == zero_extend(a1, 1) + zero_extend(b2, 1))
+    # below will fail and will dump to cex.vcd
+    dut.check_assertion(out == zero_extend(a1, 1) + zero_extend(b1, 1))
+    
