@@ -126,6 +126,11 @@ class SymbolicSimulatorBranch
   /// then it will only create the X-var for that input, otherwise all inputs
   smt::UnorderedTermMap create_input_Xvars(const std::string & inputvar_name = "");
 
+  /// dump_waveform
+  void dump_waveform(const std::string &fname, 
+                     const smt::UnorderedTermMap & iv_dict, 
+                     bool dump_all, size_t branch_idx) const;
+
   /// goto the previous simulation step
   void backtrack(size_t branch_idx); // branch, Not supported yet
   /// use the given variable assignment to initialize

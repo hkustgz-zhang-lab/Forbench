@@ -136,6 +136,8 @@ set(SOURCES
     "${PROJECT_SOURCE_DIR}/framework/sygus_simplify.cpp"
     "${PROJECT_SOURCE_DIR}/framework/state_simplify.cpp"
     "${PROJECT_SOURCE_DIR}/utils/logger.cpp"
+    "${PROJECT_SOURCE_DIR}/utils/str_util.cpp"
+    "${PROJECT_SOURCE_DIR}/printer/vcd_witness_printer.cpp"
     "${PROJECT_SOURCE_DIR}/timed-assertion-checker/timed_assertion_checker.cpp"
 )
 

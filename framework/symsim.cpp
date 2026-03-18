@@ -2,6 +2,8 @@
 
 #include "smt-switch/utils.h"
 
+#include "printer/vcd_witness_printer.h"
+
 using namespace std;
 
 namespace wasim {
@@ -114,6 +116,63 @@ smt::UnorderedTermMap SymbolicSimulator::convert(
       throw SimulatorException("Unhandled case in assignment_type");
   }
   return retdict;
+}
+
+smt::UnorderedTermMap SymbolicSimulator::create_input_Xvars(const std::string & inputvar_name) {
+  smt::UnorderedTermMap retdict;
+  if (inputvar_name.empty()) {
+    for (const auto & v : invar_) 
+      retdict.emplace(v, new_var(v->get_sort(), v->to_string(), true));
+  } else {
+    auto v = ts_.lookup(inputvar_name);
+    if (!ts_.is_input_var(v) )
+      throw SimulatorException(inputvar_name + " is not an input variable");
+    retdict.emplace(v, new_var(v->get_sort(), v->to_string(), true));
+  }
+  return retdict;
+}
+
+// You may need to give the input variable map stored in the python simulator
+void SymbolicSimulator::dump_waveform(const std::string &fname, const smt::UnorderedTermMap & iv_dict, bool dump_all) const {
+  assert(!trace_.empty()); // must have at least one state
+  // if equal, then input has been added, if not equal, input has not been added
+  assert(trace_.size() == history_choice_.size() || trace_.size() == history_choice_.size() + 1);
+
+  if (trace_.size() == history_choice_.size() + 1)
+    assert (!iv_dict.empty());
+
+  std::vector<smt::UnorderedTermMap> cex;
+  for (size_t t = 0; t < trace_.size(); ++t) { // for each time step
+    cex.push_back({});
+    auto & vmap = cex.back();
+    auto & st = trace_.at(t); // for a state
+
+    for (const auto & sv_expr_pair : st)
+      vmap.emplace(sv_expr_pair.first, solver_->get_value( sv_expr_pair.second ));
+    
+    auto & iv = history_choice_.size() > t ? history_choice_.at(t).var_assign_ : iv_dict;
+    for (const auto & iv_expr_pair : iv) 
+      vmap.emplace(iv_expr_pair.first, solver_->get_value( iv_expr_pair.second ));
+
+    // TODO: dump named_terms
+    if (dump_all) {
+      const auto & all_terms = ts_.named_terms();
+      for (const auto & str_term : all_terms) {
+        const auto & term_ = str_term.second;
+        if (ts_.is_next_var(term_)) continue;
+        if (vmap.find(term_) != vmap.end()) continue;
+        // else
+        auto term_value = solver_->substitute(term_, vmap);
+        if (!term_value->is_value())
+           std::cout << term_->to_raw_string() << " : " << term_value->to_raw_string() << std::endl;
+        assert(term_value->is_value()); // should be value after substitution
+        vmap.emplace(term_, term_value);
+      }
+    }
+  }
+
+  VCDWitnessPrinter vcd_printer(ts_, cex);
+  vcd_printer.dump_trace_to_file(fname);
 }
 
 void SymbolicSimulator::backtrack()

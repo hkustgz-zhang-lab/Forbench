@@ -89,6 +89,14 @@ class SymbolicSimulator
 
   /// a shortcut to create symbolic variables/concrete values in a map
   smt::UnorderedTermMap convert(const assignment_type & vdict) const;
+  /// a shortcut to create X values for inputs, if you give the variable name
+  /// then it will only create the X-var for that input, otherwise all inputs
+  smt::UnorderedTermMap create_input_Xvars(const std::string & inputvar_name = "");
+
+  /// dump_waveform
+  void dump_waveform(const std::string & fname, 
+                     const smt::UnorderedTermMap & iv_dict, // external input var map for the last step
+                     bool dump_all) const; // whether to dump all named terms
 
   /// goto the previous simulation step
   void backtrack();

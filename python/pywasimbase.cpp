@@ -1398,6 +1398,17 @@ namespace wasim {
     /// get the assumptions (collected from all previous steps)
     void print_current_step_assumptions() const {sptr->print_current_step_assumptions();}
 
+    boost::python::dict create_input_Xvars(const std::string & n) {
+      auto ret_smt = sptr->create_input_Xvars(n);
+      boost::python::dict ret;
+      for (const auto & sv_update : ret_smt) {
+        NodeRef * k = new NodeRef(sv_update.first, sptr->get_solver());
+        NodeRef * v = new NodeRef(sv_update.second, sptr->get_solver());
+        ret[k] = v;
+      }
+      return ret;
+    }
+
     /// a shortcut to create symbolic variables/concrete values in a map
     boost::python::dict convert(const boost::python::dict & d) const {
       assignment_type vdict;
@@ -1434,6 +1445,25 @@ namespace wasim {
 
     /// goto the previous simulation step
     void backtrack() { sptr->backtrack(); }
+
+    void dump_waveform(const std::string & file_name,
+                       const boost::python::dict & d, bool dump_all) { 
+      // convert d to smt::UnorderedTermMap
+      smt::UnorderedTermMap ivdict;
+
+      boost::python::list items = d.items();
+      for(ssize_t i = 0; i < len(items); ++i) {
+          boost::python::object key = items[i][0];
+          boost::python::object value = items[i][1];
+          boost::python::extract<NodeRef *> k_node(key);
+          boost::python::extract<NodeRef *> v_node(value);
+
+          if (!k_node.check() || !v_node.check())
+            throw PyWASIMException(PyExc_RuntimeError, "Expecting NodeRef->NodeRef map in dump_waveform");
+          ivdict.emplace(k_node()->node, v_node()->node);          
+      }
+      sptr->dump_waveform(file_name, ivdict, dump_all); 
+    }
 
     /// use the given variable assignment to initialize
     void init(const boost::python::dict & d) {
@@ -1681,6 +1711,27 @@ namespace wasim {
 
     /// goto the previous simulation step
     void backtrack(size_t branch_idx) { sptr->backtrack(branch_idx); }
+
+    /// dump waveform to a give file
+
+    void dump_waveform(const std::string & file_name,
+                       const boost::python::dict & d, bool dump_all, size_t branch_idx) { 
+      // convert d to smt::UnorderedTermMap
+      smt::UnorderedTermMap ivdict;
+
+      boost::python::list items = d.items();
+      for(ssize_t i = 0; i < len(items); ++i) {
+          boost::python::object key = items[i][0];
+          boost::python::object value = items[i][1];
+          boost::python::extract<NodeRef *> k_node(key);
+          boost::python::extract<NodeRef *> v_node(value);
+
+          if (!k_node.check() || !v_node.check())
+            throw PyWASIMException(PyExc_RuntimeError, "Expecting NodeRef->NodeRef map in dump_waveform");
+          ivdict.emplace(k_node()->node, v_node()->node);          
+      }
+      sptr->dump_waveform(file_name, ivdict, dump_all, branch_idx); 
+    }
 
     /// use the given variable assignment to initialize
     void init(const boost::python::dict & d) {
@@ -2119,6 +2170,7 @@ BOOST_PYTHON_MODULE(pywasimbase)
     .def("cur", &Symsimulator::cur, return_value_policy<manage_new_object>())
     .def("print_current_step", &Symsimulator::print_current_step)
     .def("print_current_step_assumptions", &Symsimulator::print_current_step_assumptions)
+    .def("create_input_Xvars", &Symsimulator::create_input_Xvars)
     .def("convert", &Symsimulator::convert)
     .def("backtrack", &Symsimulator::backtrack)
     .def("init", &Symsimulator::init)
@@ -2136,6 +2188,7 @@ BOOST_PYTHON_MODULE(pywasimbase)
     .def("set_var", &Symsimulator::set_var, return_value_policy<manage_new_object>())
     .def("get_var", &Symsimulator::get_var, return_value_policy<manage_new_object>())
     .def("get_solver", &Symsimulator::get_solver, return_value_policy<manage_new_object>())
+    .def("dump_waveform", &Symsimulator::dump_waveform)
   ;
 
   class_<Symsimbranch>("Symsimbranch", init<TransSys *>())
@@ -2170,6 +2223,7 @@ BOOST_PYTHON_MODULE(pywasimbase)
     .def("set_var", &Symsimbranch::set_var, return_value_policy<manage_new_object>())
     .def("get_var", &Symsimbranch::get_var, return_value_policy<manage_new_object>())
     .def("get_solver", &Symsimbranch::get_solver, return_value_policy<manage_new_object>())
+    .def("dump_waveform", &Symsimbranch::dump_waveform)
   ;
 
   // public func
