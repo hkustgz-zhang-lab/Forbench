@@ -2,6 +2,7 @@
 
 #include "smt-switch/utils.h"
 #include "printer/vcd_witness_printer.h"
+#include "framework/state_simplify.h"
 
 using namespace std;
 
@@ -176,12 +177,23 @@ void SymbolicSimulatorBranch::dump_waveform(const std::string &fname, const smt:
     auto & vmap = cex.back();
     auto & st = trace_.at(t); // for a state
 
-    for (const auto & sv_expr_pair : st)
-      vmap.emplace(sv_expr_pair.first, solver_->get_value( sv_expr_pair.second ));
+    // std::cout << "dump @ cycle " << t << std::endl;
+    for (const auto & sv_expr_pair : st) {
+      auto term_value = solver_->get_value( sv_expr_pair.second );
+      vmap.emplace(sv_expr_pair.first, term_value);
+
+      // auto sname = sv_expr_pair.first->to_raw_string();
+      // std::cout << "(S) " << sname << " @" << t << " : " << term_value->to_raw_string() << std::endl;
+    }
     
     auto & iv = history_choice_.size() > t ? history_choice_.at(t).var_assign_ : iv_dict;
-    for (const auto & iv_expr_pair : iv) 
-      vmap.emplace(iv_expr_pair.first, solver_->get_value( iv_expr_pair.second ));
+    for (const auto & iv_expr_pair : iv)  {
+      auto term_value = solver_->get_value( iv_expr_pair.second );
+      vmap.emplace(iv_expr_pair.first, term_value);
+
+      // auto sname = iv_expr_pair.first->to_raw_string();
+      // std::cout << "(I) " << sname << " @" << t << " : " << term_value->to_raw_string() << std::endl;
+    }
 
     // TODO: dump named_terms
     if (dump_all) {
@@ -191,11 +203,23 @@ void SymbolicSimulatorBranch::dump_waveform(const std::string &fname, const smt:
         if (ts_.is_next_var(term_)) continue;
         if (vmap.find(term_) != vmap.end()) continue;
         // else
-        auto term_value = solver_->substitute(term_, vmap);
-        if (!term_value->is_value())
-           std::cout << term_->to_raw_string() << " : " << term_value->to_raw_string() << std::endl;
+        auto term_value = replacement_and_constant_propagation(term_, vmap, solver_);
+        // auto term_value = solver_->substitute(term_, vmap);
+        //if (!term_value->is_value())
+        // std::cout << str_term.first << " @" << t << " : " << term_value->to_raw_string() << std::endl;
         assert(term_value->is_value()); // should be value after substitution
         vmap.emplace(term_, term_value);
+        // if (str_term.first == "ctrlLogic.io_memCtrl_fetchEna" && t == 2) {
+        //   // merge st/iv
+        //   auto tmap = st;
+        //   for (const auto & p : iv)
+        //     tmap.emplace(p.first,p.second);
+        //   auto new_t = solver_->substitute(term_, tmap);
+        //   std::ofstream fout("internal_asmpt.txt");
+        //   fout << term_->to_string() << std::endl;
+        //   fout << "------------------" << std::endl;
+        //   fout << new_t->to_string() << std::endl;
+        // }
       }
     }
   }

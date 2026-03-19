@@ -22,7 +22,7 @@ smt::Term free_make_symbol(const std::string & n,
     name_cnt[n] = cnt;
     smt::Term symb;
     try {
-      symb = solver->make_symbol(n + std::to_string(cnt), symb_sort);
+      symb = solver->make_symbol(n + "#" + std::to_string(cnt), symb_sort);
       return symb;
     }
     catch (const std::exception & e) {  // maybe name conflict

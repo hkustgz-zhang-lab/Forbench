@@ -288,6 +288,7 @@ class Dut:
         asmpts_all.extend(asmpts)
         asmpts_all.extend(self.branch_list[self.curr_branch_idx].constraints)
         asmpts_all.append(asst)
+        # print ('asmpts_all: #', len(asmpts_all))
         return self.solver.check_sat_assuming(asmpts_all)
     
     def check_assertion(self, assertion):
@@ -815,7 +816,7 @@ class pywasim_local_state(object):
         return self.retval
     
     def _return_encountered(self, stmt:ast.AST | None):
-        if stmt is None:
+        if stmt is None or stmt.value is None:
             retval = None
         else:
             retval = self._eval_expr(stmt.value)
@@ -1459,13 +1460,14 @@ def async_one_step(sim, dut):
             maybe_false = dut.check_sat(~cond_curr, [] )
             dut._set_curr_branch(None)
 
-            debug_log('<branch:',maybe_true, maybe_false,'>')
+            brtag_string = '(br#'+str(curr_branch_idx)+' @pc: ' +str(st.current_frame.pc) + " cycle#" + str(dut._current_cycle(curr_branch_idx)) +')'
+            debug_log('<wait_cond branch:',maybe_true, maybe_false, brtag_string+' >')
             if maybe_true and not maybe_false:
                 st.await_cond = None
-                dut.simulator.add_assumption_interpreted(curr_branch_idx, cond_curr, "branch cond")
+                dut.simulator.add_assumption_interpreted(curr_branch_idx, cond_curr, "branch cond " + brtag_string)
                 # st.branch_cond.append(cond_curr) #HZ: we can get rid of this, branch_cond will be inserted into dut.simulator
             elif maybe_false and not maybe_true:
-                dut.simulator.add_assumption_interpreted(curr_branch_idx, ~cond_curr, "~branch cond")
+                dut.simulator.add_assumption_interpreted(curr_branch_idx, ~cond_curr, "~branch cond" + brtag_string)
                 #st.branch_cond.append(~cond_curr)  # record this as false
             else:
                 assert(maybe_true and maybe_false)
@@ -1473,8 +1475,8 @@ def async_one_step(sim, dut):
                 # st.clone clears passthrough.await_cond
                 passthrough = st.clone(branch_idx = br_idx) # link the state with the branch
                 assert (passthrough.await_cond is None)
-                dut.simulator.add_assumption_interpreted(br_idx, cond_curr, "branch cond")
-                dut.simulator.add_assumption_interpreted(curr_branch_idx, ~cond_curr, "~branch cond")
+                dut.simulator.add_assumption_interpreted(br_idx, cond_curr, "branch cond" + brtag_string)
+                dut.simulator.add_assumption_interpreted(curr_branch_idx, ~cond_curr, "~branch cond" + brtag_string)
                 #passthrough.branch_cond.append(cond_curr)
                 #st.branch_cond.append(~cond_curr)
                 _all_states.append(passthrough)

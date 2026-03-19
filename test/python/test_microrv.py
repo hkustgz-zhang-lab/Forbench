@@ -1,6 +1,7 @@
 import pywasim_async as pywasim
 from collections import deque
 
+pywasim._debug = False
 # check each inst?
 # - SLLI/IW, reserved ?
 # - SRLI/IW, ... ?
@@ -17,7 +18,7 @@ def implies(c1, c2):
 def rvformal_addr_eq(a1,a2):
     return (rvformal_addr_valid(a1) == rvformal_addr_valid(a2)) & implies(rvformal_addr_valid(a1), a1==a2)
 
-def check_insn(sim, dut, spec_model, inst):
+def check_insn(sim, dut, spec_model, inst, check_extra):
     in_rvfi_insn      = spec_model.lookup('SPEC::rvfi_insn')
     in_rvfi_mem_rdata = spec_model.lookup('SPEC::rvfi_mem_rdata')
     in_rvfi_pc_rdata  = spec_model.lookup('SPEC::rvfi_pc_rdata')
@@ -56,7 +57,7 @@ def check_insn(sim, dut, spec_model, inst):
                in_rvfi_mem_rdata : dut_mem_rdata, \
                in_rvfi_pc_rdata : dut_pc_rdata, \
                in_rvfi_rs1_rdata : dut_rs1_rdata, \
-               in_rvfi_rs2_rdata : dut_rs1_rdata, \
+               in_rvfi_rs2_rdata : dut_rs2_rdata, \
                in_rvfi_valid :  dut.make_constant(1, 1) }
 
     spec_valid      = out_valid.substitute(submap)    
@@ -72,12 +73,19 @@ def check_insn(sim, dut, spec_model, inst):
     spec_mem_wdata  = out_mem_wdata.substitute(submap) 
 
 
-    mem_access_fault = ((spec_mem_rmask != 0) | (spec_mem_wmask != 0)) & ~(rvformal_addr_valid(spec_mem_addr));
-    mem_trap = ~(rvformal_addr_valid(dut_pc_rdata)) | mem_access_fault
+    mem_access_fault = ((spec_mem_rmask != 0) | (spec_mem_wmask != 0)) & ~(rvformal_addr_valid(spec_mem_addr)) #false
+    mem_trap = ~(rvformal_addr_valid(dut_pc_rdata)) | mem_access_fault # false
+    
+    if check_extra:
+      out_other_type_decode = spec_model.lookup('SPEC::spec_is_fence_sys_csr')
+      spec_other_type_decode = out_other_type_decode.substitute(submap)
+      
+      with sim.assume((spec_valid == 0) & (spec_other_type_decode == 0)): # mret fence,ecall, csr
+        sim.check_assertion(dut_trap == 1)
 
     with sim.assume(spec_valid == 1):
-        with sim.assume(mem_trap == 1) as possible:
-            if possible:
+        with sim.assume(mem_trap == 1, check_possible = True) as possible:
+            if possible: # will not be here...
                 print('possible')
                 sim.check_assertion(dut_trap == 1)
                 sim.check_assertion(dut_rd_addr == 0)
@@ -94,9 +102,8 @@ def check_insn(sim, dut, spec_model, inst):
                     sim.check_assertion(spec_rs1_addr == dut_rs1_addr , asmpts = [spec_rs1_addr != 0])
                     sim.check_assertion(spec_rs2_addr == dut_rs2_addr , asmpts = [spec_rs2_addr != 0])
                     sim.check_assertion(spec_rd_addr == dut_rd_addr)
-                    #print (spec_rd_wdata)
-                    #print (dut_rd_wdata)
-                    #?why sim.check_assertion(spec_rd_wdata == dut_rd_wdata)
+                    sim.check_assertion(spec_rd_wdata == dut_rd_wdata)
+                    
                     sim.check_assertion(rvformal_addr_eq(spec_pc_wdata, dut_pc_wdata))
                 with sim.assume((spec_mem_rmask != 0) | (spec_mem_wmask != 0)) as p2:
                     if p2:
@@ -121,19 +128,25 @@ def test1(sim, dut):
     # start from here
     print("test_set")
     dut.reset.value_def = 0 # default: not reset
-    dut.io_memIF_IMem_instructionReady.value == 0
-    sim.wait_cond(dut.io_memIF_IMem_fetchEnable.value == 1)
+    dut.io_memIF_IMem_instructionReady.value = 0
+
+    can_sat = dut.check_sat(dut.io_memIF_IMem_fetchEnable.value == 1, [])
+    while not can_sat:
+        sim.wait_cycle()
+        dut.io_memIF_IMem_instructionReady.value = 0
+        can_sat = dut.check_sat(dut.io_memIF_IMem_fetchEnable.value == 1, [])
+    # apply input
+    dut.io_memIF_IMem_instructionReady.value = 1
     dut.io_memIF_IMem_instruction.value = 'inst' # assign symbolic instruction
-    dut.io_memIF_IMem_instructionReady.value = 1 # ready and kick it off
-    
-    # wait to see our instruction
-    sim.wait_cond(dut.rvfi_valid.value == 1)
-    #print (dut.rvfi_insn.value)
-    print ('cycle@',sim.current_cycle())
+    print('-- cycle:',sim.current_cycle(), 'inst applied')
+    sim.wait_cycle()
+    while dut.rvfi_valid.value == 0:
+        sim.wait_cycle()
+    print('-- cycle:',sim.current_cycle(), 'inst check')
     inst = sim.get_var('inst')
     sim.check_assertion(dut.rvfi_insn.value == inst)
-    # extract necessary info and perform check
-    check_insn(sim, dut, spec_model, inst)
+    check_insn(sim, dut, spec_model, inst, True)
+    # https://ret.futo.org/riscv/  endienness
     
 
 #load dut    
@@ -141,7 +154,7 @@ dut = pywasim.Dut('../../design/asynctest/microriscv/rv32.btor2')
 sim = pywasim.async_simulator(dut)
 
 #load spec
-spec_model = pywasim.TransSys('/home/hongcez/wenbin/pywasim-exp/riscv-formal/insns-btor2/insn_add.btor2', dut.solver, 'SPEC::')
+spec_model = pywasim.TransSys('/home/hongcez/wenbin/pywasim-exp/riscv-formal/insns-btor2/rv32i.btor2', dut.solver, 'SPEC::')
 
 dut.set_init()
 test1(sim, dut)
