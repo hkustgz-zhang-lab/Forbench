@@ -1094,7 +1094,8 @@ class pywasim_local_state(object):
         block_body = list(code_block) if len(code_block) else [ast.Pass()] # add a `pass` (do nothing) 
         # this is because Python does not allow empty block anyway...
         new_frame = stackframe(localvars=self.current_frame.localvars, func_def=None, code=block_body, args=None, kwargs=None,\
-                               block_kind = block_kind, block_node = block_node, loop_iter = loop_iter)
+                               block_kind = block_kind, block_node = block_node, loop_iter = loop_iter,\
+                               source_file = self.current_frame.source_file, source_start_lineno = self.current_frame.source_start_lineno, source_func_name=self.current_frame.source_func_name)
         self.stack.append(([], self.current_frame)) # empty target
         self.current_frame = new_frame
 
@@ -1391,11 +1392,12 @@ def async_one_step(sim, dut):
         for idx,st in enumerate(_all_states):  # list of pywasim_local_state
             # print(f'<coroutine #{idx}>')
             curr_branch_idx = st.branch_idx
+            source_func_name = st.current_frame.source_func_name
             if st.is_finished():
                 continue
 
             #else
-            debug_log(f'<coroutine #{idx}>')
+            debug_log(f'<coroutine #{idx} br#{curr_branch_idx} func:{source_func_name}>')
             all_finished = False
 
             if st.await_cond is not None and st.await_cond.execthread is not None:
@@ -1437,8 +1439,9 @@ def async_one_step(sim, dut):
         if st.is_finished():
             continue
 
-        debug_log(f'<coroutine #{idx} post>')
         curr_branch_idx = st.branch_idx
+        source_func_name = st.current_frame.source_func_name
+        debug_log(f'<coroutine #{idx} br#{curr_branch_idx} fn:{source_func_name} post>')
         # assert (st.await_cond) # is not None
         # as we append passthrough to _all_states, its await_condition may be None 
         if st.await_cond is None:
