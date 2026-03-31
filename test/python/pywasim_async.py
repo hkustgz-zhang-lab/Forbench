@@ -981,6 +981,13 @@ class pywasim_local_state(object):
             # for the false branch, depends on if there is orelse
             # if there is orelse, then for the other, push that orelse
             # otherwise, just go around
+
+            # a sanity check
+            for st in _all_states:
+                if st.coroutine is not self.coroutine and st.branch_idx == self.branch_idx:
+                    print ('implementation error! not handled!')
+                    assert False
+
             br_idx = self.sim.dut._fork_branch(self.branch_idx) # increment max_branch_idx, must before st.clone()
             passthrough = self.clone(branch_idx = br_idx) # link the state with the branch
             self._push_block_frame(stmt.body, block_kind='if', block_node=stmt)
@@ -1474,6 +1481,13 @@ def async_one_step(sim, dut):
                 #st.branch_cond.append(~cond_curr)  # record this as false
             else:
                 assert(maybe_true and maybe_false)
+
+                # a sanity check - not handle yet
+                for st2 in _all_states:
+                    if st2.coroutine is not st.coroutine and st2.branch_idx == st.branch_idx:
+                        print ('implementation error! not handled!')
+                        assert False
+                        
                 br_idx = dut._fork_branch(curr_branch_idx) # increment max_branch_idx, must before st.clone()
                 # st.clone clears passthrough.await_cond
                 passthrough = st.clone(branch_idx = br_idx) # link the state with the branch
