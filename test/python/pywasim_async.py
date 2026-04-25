@@ -983,10 +983,14 @@ class pywasim_local_state(object):
             # otherwise, just go around
 
             # a sanity check
+            other_state_to_fork = []
             for st in _all_states:
+                if st is self or st.finished:
+                    continue
                 if st.coroutine is not self.coroutine and st.branch_idx == self.branch_idx:
-                    print ('implementation error! not handled!')
-                    assert False
+                    other_state_to_fork.append(st)
+            if other_state_to_fork:
+                debug_log(f"Need to copy other {len(other_state_to_fork)} states as well")
 
             br_idx = self.sim.dut._fork_branch(self.branch_idx) # increment max_branch_idx, must before st.clone()
             passthrough = self.clone(branch_idx = br_idx) # link the state with the branch
@@ -1002,6 +1006,12 @@ class pywasim_local_state(object):
             else:
                 passthrough._advance_pc()
             _all_states.append(passthrough)
+
+            # copy other states as well
+            for st in other_state_to_fork:
+                passthrough_other = st.clone(branch_idx = br_idx)
+                _all_states.append(passthrough_other)
+
         return pushed_stack
 
     def _handle_symbolic_while(self, stmt:ast.While, cond_val) -> bool: # return if stack is pushed
@@ -1023,6 +1033,17 @@ class pywasim_local_state(object):
             assert(maybe_true and maybe_false)# for the false branch, depends on if there is orelse
             # if there is orelse, then for the other, push that orelse
             # otherwise, just go around
+
+            # a sanity check to see if this affects another coroutine
+            other_state_to_fork = []
+            for st in _all_states:
+                if st is self or st.finished:
+                    continue
+                if st.coroutine is not self.coroutine and st.branch_idx == self.branch_idx:
+                    other_state_to_fork.append(st)
+            if other_state_to_fork:
+                debug_log("Need to copy other states as well")
+
             br_idx = self.sim.dut._fork_branch(self.branch_idx) # increment max_branch_idx, must before st.clone()
             passthrough = self.clone(branch_idx = br_idx) # link the state with the branch
             self._push_block_frame(stmt.body, block_kind='while', block_node=stmt)
@@ -1037,6 +1058,10 @@ class pywasim_local_state(object):
             else:
                 passthrough._advance_pc()
             _all_states.append(passthrough)
+            # copy other states as well
+            for st in other_state_to_fork:
+                passthrough_other = st.clone(branch_idx = br_idx)
+                _all_states.append(passthrough_other)
         return pushed_stack
         
 
@@ -1483,10 +1508,14 @@ def async_one_step(sim, dut):
                 assert(maybe_true and maybe_false)
 
                 # a sanity check - not handle yet
+                other_state_to_fork = []
                 for st2 in _all_states:
+                    if st2 is st or st2.finished:
+                        continue
                     if st2.coroutine is not st.coroutine and st2.branch_idx == st.branch_idx:
-                        print ('implementation error! not handled!')
-                        assert False
+                        other_state_to_fork.append(st2)
+                if other_state_to_fork:
+                    debug_log("Need to copy other states as well")
                         
                 br_idx = dut._fork_branch(curr_branch_idx) # increment max_branch_idx, must before st.clone()
                 # st.clone clears passthrough.await_cond
@@ -1497,6 +1526,10 @@ def async_one_step(sim, dut):
                 #passthrough.branch_cond.append(cond_curr)
                 #st.branch_cond.append(~cond_curr)
                 _all_states.append(passthrough)
+                for st2 in other_state_to_fork:
+                    other_passthrough = st2.clone(branch_idx = br_idx)
+                    _all_states.append(other_passthrough)
+
 
                 
                 

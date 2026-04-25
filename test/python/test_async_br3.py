@@ -65,8 +65,8 @@ dut = pywasim.Dut('../../design/asynctest/mul/mul_free_restart.btor2')
 sim = pywasim.async_simulator(dut)
 
 dut.set_init()
-#test_full(sim, dut, pywasim) # you should only uncomment 1 of them
-test_simple(sim, dut, pywasim)
+test_full(sim, dut, pywasim) # you should only uncomment 1 of them
+#test_simple(sim, dut, pywasim)
 pywasim.start_loop(sim, dut, 100)
 print("branch num:", len(dut.branch_list))
     
