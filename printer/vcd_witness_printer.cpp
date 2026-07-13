@@ -3,7 +3,7 @@
  ** \verbatim
  ** Top contributors (to current version):
  **   Hongce Zhang
- ** This file is part of the wasim project.
+ ** This file is part of the Forbench project.
  ** Copyright (c) 2026 by the authors listed in the file AUTHORS
  ** in the top-level source directory) and their institutional affiliations.
  ** All rights reserved.  See the file LICENSE in the top-level source
@@ -75,7 +75,11 @@ static std::string as_bits(std::string val)
     throw SimulatorException("Don't know how to interpret value: " + val);
   }
 
-  if (res.substr(0, 2) == "#b") {
+  if (res == "true") {
+    return "b1";
+  } else if (res == "false") {
+    return "b0";
+  } else if (res.substr(0, 2) == "#b") {
     // #b prefix -> b
     res = res.substr(1, val.length() - 1);
   } else if (res.substr(0, 2) == "#x") {
@@ -300,7 +304,8 @@ void VCDWitnessPrinter::check_insert_scope(std::string full_name,
     }
   }  // at the end of this loop, we are at the scope to insert our variable
   const auto & short_name = scopes.back();
-  uint64_t width = ast->get_sort()->get_width();
+  auto sort = ast->get_sort();
+  uint64_t width = sort->get_sort_kind() == smt::BOOL ? 1 : sort->get_width();
 
   std::map<std::string, VCDSignal> & signal_set =
       is_reg ? root->regs : root->wires;

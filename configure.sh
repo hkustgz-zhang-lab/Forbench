@@ -87,7 +87,7 @@ do
 done
 
 
-cmake_opts="-DCMAKE_BUILD_TYPE=$buildtype -DWASIM_LIB_TYPE=${lib_type} -DWASIM_STATIC_EXEC=${static_exec}"
+cmake_opts="-DCMAKE_BUILD_TYPE=$buildtype -DFORBENCH_LIB_TYPE=${lib_type} -DFORBENCH_STATIC_EXEC=${static_exec}"
 
 [ $install_prefix != default ] \
     && cmake_opts="$cmake_opts -DCMAKE_INSTALL_PREFIX=$install_prefix"

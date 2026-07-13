@@ -45,7 +45,7 @@ void SetToStdErr(const int& to_err) { FLAGS_logtostderr = to_err; }
 // DebugLog
 
 LogInitter::LogInitter() {
-  google::InitGoogleLogging("wasim_log");
+  google::InitGoogleLogging("forbench");
   FLAGS_minloglevel = 0; // log all message above level 0
 #ifndef NDEBUG
   FLAGS_logtostderr = 1; // log INFO and WARNING to stderr

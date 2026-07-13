@@ -572,10 +572,25 @@ namespace wasim {
         NodeRef* other) const
     {
         try{
-          if (isbool())
-            return new NodeRef(solver->make_term(boolOp, node, other->node), solver);
-          if (bvwidth())
-            return new NodeRef(solver->make_term(bvOp, node, other->node), solver);
+          if (isbool()) {
+            smt::Term rhs = other->node;
+            if (other->bvwidth() == 1) {
+              auto one = solver->make_term(
+                  1, solver->make_sort(smt::SortKind::BV, 1));
+              rhs = solver->make_term(smt::PrimOp::Equal, rhs, one);
+            }
+            return new NodeRef(solver->make_term(boolOp, node, rhs), solver);
+          }
+          if (bvwidth()) {
+            smt::Term rhs = other->node;
+            if (bvwidth() == 1 && other->isbool()) {
+              auto bv1_sort = solver->make_sort(smt::SortKind::BV, 1);
+              auto one = solver->make_term(1, bv1_sort);
+              auto zero = solver->make_term(0, bv1_sort);
+              rhs = solver->make_term(smt::PrimOp::Ite, rhs, one, zero);
+            }
+            return new NodeRef(solver->make_term(bvOp, node, rhs), solver);
+          }
         } catch (SmtException e) {
           throw PyWASIMException(PyExc_TypeError, e.what());
         } 
@@ -674,10 +689,25 @@ namespace wasim {
         const char* opName,
         NodeRef* l, NodeRef* r) {
         try{
-          if (l->isbool())
-            return new NodeRef(l->solver->make_term(boolOp, l->node, r->node), l->solver);
-          if (l->bvwidth())
-            return new NodeRef(l->solver->make_term(bvOp, l->node, r->node), l->solver);
+          if (l->isbool()) {
+            smt::Term rhs = r->node;
+            if (r->bvwidth() == 1) {
+              auto one = l->solver->make_term(
+                  1, l->solver->make_sort(smt::SortKind::BV, 1));
+              rhs = l->solver->make_term(smt::PrimOp::Equal, rhs, one);
+            }
+            return new NodeRef(l->solver->make_term(boolOp, l->node, rhs), l->solver);
+          }
+          if (l->bvwidth()) {
+            smt::Term rhs = r->node;
+            if (l->bvwidth() == 1 && r->isbool()) {
+              auto bv1_sort = l->solver->make_sort(smt::SortKind::BV, 1);
+              auto one = l->solver->make_term(1, bv1_sort);
+              auto zero = l->solver->make_term(0, bv1_sort);
+              rhs = l->solver->make_term(smt::PrimOp::Ite, rhs, one, zero);
+            }
+            return new NodeRef(l->solver->make_term(bvOp, l->node, rhs), l->solver);
+          }
         } catch (SmtException e) {
           throw PyWASIMException(PyExc_TypeError, e.what());
         } 
@@ -1168,7 +1198,7 @@ namespace wasim {
   struct TransSys {
 
     TransSys(const std::string & btorname, const std::string & prefix = "") { 
-      smt::SmtSolver solver = smt::BoolectorSolverFactory::create(false);
+      smt::SmtSolver solver = smt::BitwuzlaSolverFactory::create(false);
       solver->set_logic("QF_UFBV");
       solver->set_opt("incremental", "true");
       solver->set_opt("produce-models", "true");

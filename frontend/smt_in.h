@@ -1,6 +1,6 @@
 #pragma once
 
-#include "smt-switch/boolector_factory.h"
+#include "smt-switch/bitwuzla_factory.h"
 #include "smt-switch/smt.h"
 #include "smt-switch/smtlib_reader.h"
 
@@ -25,4 +25,3 @@ class WasimSmtLib2Parser : public smt::SmtLibReader
 };
 
 } // end of namespace wasim
-

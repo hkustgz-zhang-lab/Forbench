@@ -204,6 +204,8 @@ void SymbolicSimulatorBranch::dump_waveform(const std::string &fname, const smt:
         if (vmap.find(term_) != vmap.end()) continue;
         // else
         auto term_value = replacement_and_constant_propagation(term_, vmap, solver_);
+        if (!term_value->is_value())
+          term_value = solver_->get_value(term_value);
         // auto term_value = solver_->substitute(term_, vmap);
         //if (!term_value->is_value())
         // std::cout << str_term.first << " @" << t << " : " << term_value->to_raw_string() << std::endl;

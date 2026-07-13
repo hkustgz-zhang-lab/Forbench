@@ -19,7 +19,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "smt-switch/boolector_factory.h"
+#include "smt-switch/bitwuzla_factory.h"
 #include "smt-switch/smt.h"
 
 #include "utils/exceptions.h"
@@ -80,7 +80,7 @@ class TransitionSystem
    * sorts
    *  this makes it a great candidate for representing the TransitionSystem */
   TransitionSystem()
-      : solver_(smt::BoolectorSolverFactory::create(false)),
+      : solver_(smt::BitwuzlaSolverFactory::create(false)),
         init_(solver_->make_term(true)),
         trans_(solver_->make_term(true)),
         functional_(false),

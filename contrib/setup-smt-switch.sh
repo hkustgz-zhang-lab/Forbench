@@ -2,8 +2,7 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 DEPS=$DIR/../deps
-
-SMT_SWITCH_VERSION=b812cc4bddddde33d2fd05f4044f4fcfb8d648d8
+SMT_SWITCH_VERSION=2133053735db6037d49f04a8adabba758a568eba
 
 usage () {
     cat <<EOF
@@ -45,20 +44,27 @@ done
 
 mkdir -p $DEPS
 
+TOOLCHAIN_OPTS=""
+BUNDLED_BISON="$DEPS/bison/bison-install/bin/bison"
+BUNDLED_FLEX="$DEPS/flex/flex-install/bin/flex"
+if [ -x "$BUNDLED_BISON" ] && "$BUNDLED_BISON" --version >/dev/null 2>&1; then
+    TOOLCHAIN_OPTS="$TOOLCHAIN_OPTS --bison-dir=../bison/bison-install"
+fi
+if [ -x "$BUNDLED_FLEX" ] && "$BUNDLED_FLEX" --version >/dev/null 2>&1; then
+    TOOLCHAIN_OPTS="$TOOLCHAIN_OPTS --flex-dir=../flex/flex-install"
+fi
+
 if [ ! -d "$DEPS/smt-switch" ]; then
     cd $DEPS
-    git clone https://github.com/zhanghongce/smt-switch.git
+    git clone https://github.com/yangziyiiii/smt-switch.git
     cd smt-switch
     git checkout -f $SMT_SWITCH_VERSION
-    ./contrib/setup-btor.sh
-    cd deps
-    wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.1.2/cvc5-Linux-static.zip
-    unzip cvc5-Linux-static.zip -d .
-    cd ..
-    CONF_OPTS="$CONF_OPTS --cvc5-home=$(pwd)/deps/cvc5-Linux-static"
+    ./contrib/setup-bitwuzla.sh
+    ./contrib/setup-cvc5.sh
+    CONF_OPTS="$CONF_OPTS --cvc5-home=$(pwd)/deps/cvc5"
     
     # pass bison/flex directories from smt-switch perspective
-    ./configure.sh --btor --cvc5 $CONF_OPTS --prefix=local --static --smtlib-reader --bison-dir=../bison/bison-install --flex-dir=../flex/flex-install
+    ./configure.sh --bitwuzla --cvc5 $CONF_OPTS --prefix=local --static --smtlib-reader $TOOLCHAIN_OPTS
     cd build
     make -j$(nproc)
     # TODO put this back
@@ -70,8 +76,8 @@ else
     echo "$DEPS/smt-switch already exists. If you want to rebuild, please remove it manually."
 fi
 
-if [ 0 -lt $(ls $DEPS/smt-switch/local/lib/libsmt-switch* 2>/dev/null | wc -w) ]; then
-    echo "It appears smt-switch with boolector and cvc5 was successfully installed to $DEPS/smt-switch/local."
+if [ -f "$DEPS/smt-switch/local/lib/libsmt-switch-bitwuzla.a" ]; then
+    echo "It appears smt-switch with bitwuzla and cvc5 was successfully installed to $DEPS/smt-switch/local."
     echo "You may now build pono with: ./configure.sh && cd build && make"
 else
     echo "Building smt-switch failed."

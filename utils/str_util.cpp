@@ -3,7 +3,7 @@
  ** \verbatim
  ** Top contributors (to current version):
  **   Hongce Zhang
- ** This file is part of the wasim project.
+ ** This file is part of the Forbench project.
  ** Copyright (c) 2026 by the authors listed in the file AUTHORS
  ** in the top-level source directory) and their institutional affiliations.
  ** All rights reserved.  See the file LICENSE in the top-level source

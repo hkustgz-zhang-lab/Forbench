@@ -9,7 +9,7 @@
 
 #include "smt-switch/smt.h"
 #include "smt-switch/utils.h"
-#include "smt-switch/boolector_factory.h"
+#include "smt-switch/bitwuzla_factory.h"
 #include "smt-switch/cvc5_factory.h"
 
 #include <time.h>

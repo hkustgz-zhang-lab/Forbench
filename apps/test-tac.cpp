@@ -4,7 +4,7 @@
 #include "frontend/btor2_encoder.h"
 #include "framework/symsim.h"
 #include "framework/ts.h"
-#include "smt-switch/boolector_factory.h"
+#include "smt-switch/bitwuzla_factory.h"
 #include "timed-assertion-checker/timed_assertion_checker.h"
 
 using namespace wasim;
@@ -13,7 +13,7 @@ using namespace smt;
 int main() {
 
 
-  SmtSolver solver = BoolectorSolverFactory::create(false);
+  SmtSolver solver = BitwuzlaSolverFactory::create(false);
 
   solver->set_logic("QF_UFBV");
   solver->set_opt("incremental", "true");
@@ -42,5 +42,4 @@ int main() {
 
   return 0;
 }
-
 

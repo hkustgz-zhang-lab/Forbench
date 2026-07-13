@@ -4,7 +4,7 @@
 // #include <iomanip>
 // #include <unordered_map>
 
-#include "smt-switch/boolector_factory.h"
+#include "smt-switch/bitwuzla_factory.h"
 // #include "../deps/smt-switch/local/include/smt-switch/boolector_extensions.h"
 
 #include "smt-switch/smt.h"

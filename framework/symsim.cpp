@@ -164,6 +164,8 @@ void SymbolicSimulator::dump_waveform(const std::string &fname, const smt::Unord
         // else
         auto term_value = solver_->substitute(term_, vmap);
         if (!term_value->is_value())
+          term_value = solver_->get_value(term_value);
+        if (!term_value->is_value())
            std::cout << term_->to_raw_string() << " : " << term_value->to_raw_string() << std::endl;
         assert(term_value->is_value()); // should be value after substitution
         vmap.emplace(term_, term_value);

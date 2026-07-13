@@ -8,7 +8,7 @@
 #include "framework/term_manip.h"
 #include "framework/traverse_manip.h"
 #include "framework/ts.h"
-#include "smt-switch/boolector_factory.h"
+#include "smt-switch/bitwuzla_factory.h"
 
 using namespace wasim;
 // using namespace smt;
@@ -32,7 +32,7 @@ int main()
   std::string input_file =
       PROJECT_SOURCE_DIR "/design/testcase1-simple_pipe/simple_pipe.btor2";
 
-  smt::SmtSolver solver = smt::BoolectorSolverFactory::create(false);
+  smt::SmtSolver solver = smt::BitwuzlaSolverFactory::create(false);
   solver->set_logic("QF_UFBV");
   solver->set_opt("incremental", "true");
   solver->set_opt("produce-models", "true");

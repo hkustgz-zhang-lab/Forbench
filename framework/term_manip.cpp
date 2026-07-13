@@ -6,6 +6,18 @@ using namespace std;
 
 namespace wasim {
 
+static std::string append_symbol_suffix(const std::string & name,
+                                        const std::string & suffix)
+{
+  // Bitwuzla prints symbols containing SMT-LIB special characters in quoted
+  // form. Keep the suffix inside the quotes so the generated symbol remains
+  // SMT-LIB compliant (e.g. |mem[0]| -> |mem[0]#1|).
+  if (name.size() >= 2 && name.front() == '|' && name.back() == '|') {
+    return name.substr(0, name.size() - 1) + suffix + "|";
+  }
+  return name + suffix;
+}
+
 smt::Term free_make_symbol(const std::string & n,
                            smt::Sort symb_sort,
                            std::unordered_map<std::string, int> & name_cnt,
@@ -22,7 +34,8 @@ smt::Term free_make_symbol(const std::string & n,
     name_cnt[n] = cnt;
     smt::Term symb;
     try {
-      symb = solver->make_symbol(n + "#" + std::to_string(cnt), symb_sort);
+      symb = solver->make_symbol(
+          append_symbol_suffix(n, "#" + std::to_string(cnt)), symb_sort);
       return symb;
     }
     catch (const std::exception & e) {  // maybe name conflict

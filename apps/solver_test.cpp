@@ -1,15 +1,15 @@
 #include <iostream>
-#include "smt-switch/boolector_factory.h"
+#include "smt-switch/bitwuzla_factory.h"
 #include "smt-switch/smt.h"
 using namespace smt;
 using namespace std;
 int main()
 {
-  // Boolector aliases booleans and bitvectors of size one
+  // Bitwuzla aliases booleans and bitvectors of size one
   // and also performs on-the-fly rewriting
   // if you'd like to maintain the term structure, you can
   // enable logging by passing true
-  SmtSolver s = BoolectorSolverFactory::create(false);
+  SmtSolver s = BitwuzlaSolverFactory::create(false);
 
   s->set_logic("QF_UFBV");
   s->set_opt("incremental", "true");

@@ -1,6 +1,6 @@
 #include "independence_check.h"
 
-#include "smt-switch/boolector_factory.h"
+#include "smt-switch/bitwuzla_factory.h"
 
 namespace wasim {
 // TODO: need to distinguish constant and op?
@@ -86,7 +86,7 @@ bool e_is_independent_of_v(const smt::Term & e,
   // locally in this function I was hoping push/pop can be used to create
   // temporary SMT variables however, it is not the case.
 
-  auto localSolver = smt::BoolectorSolverFactory::create(false);
+  auto localSolver = smt::BitwuzlaSolverFactory::create(false);
   localSolver->set_logic("QF_UFBV");
   localSolver->set_opt("incremental", "true");
   localSolver->set_opt("produce-models", "true");

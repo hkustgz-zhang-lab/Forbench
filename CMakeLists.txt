@@ -1,10 +1,16 @@
 cmake_minimum_required(VERSION 3.1)
 
-project(wasim)
+project(Forbench VERSION 0.1.1 LANGUAGES CXX)
 
-set(WASIM_MAJOR 0)   # Major component of WASIM version
-set(WASIM_MINOR 1)   # Minor component of WASIM version
-set(WASIM_RELEASE 1) # Release component of WASIM version
+set(FORBENCH_MAJOR ${PROJECT_VERSION_MAJOR})
+set(FORBENCH_MINOR ${PROJECT_VERSION_MINOR})
+set(FORBENCH_RELEASE ${PROJECT_VERSION_PATCH})
+
+# WASIM is the historical API name. Keep the old variables for downstream
+# projects while exposing Forbench-branded names for new integrations.
+set(WASIM_MAJOR ${FORBENCH_MAJOR})
+set(WASIM_MINOR ${FORBENCH_MINOR})
+set(WASIM_RELEASE ${FORBENCH_RELEASE})
 
 # handle different versions of CMake
 if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0 AND NOT APPLE)
@@ -20,7 +26,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+add_definitions(-DFORBENCH_SRC_DIR=${PROJECT_SOURCE_DIR})
 add_definitions(-DWASIM_SRC_DIR=${PROJECT_SOURCE_DIR})
+
+if (DEFINED WASIM_LIB_TYPE AND NOT DEFINED FORBENCH_LIB_TYPE)
+  message(DEPRECATION
+    "WASIM_LIB_TYPE is deprecated; use FORBENCH_LIB_TYPE instead")
+  set(FORBENCH_LIB_TYPE "${WASIM_LIB_TYPE}")
+endif()
+if (NOT DEFINED FORBENCH_LIB_TYPE)
+  set(FORBENCH_LIB_TYPE SHARED)
+endif()
 
 if(APPLE)
   set(SHARED_LIB_EXT "dylib")
@@ -35,7 +51,19 @@ if (WITH_PROFILING)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DWITH_PROFILING")
 endif()
 
-list(APPEND CMAKE_PREFIX_PATH "${PROJECT_SOURCE_DIR}/deps/bison/bison-install")
+set(BUNDLED_BISON "${PROJECT_SOURCE_DIR}/deps/bison/bison-install/bin/bison")
+if (EXISTS "${BUNDLED_BISON}")
+  execute_process(
+    COMMAND "${BUNDLED_BISON}" --version
+    RESULT_VARIABLE BUNDLED_BISON_RESULT
+    OUTPUT_QUIET
+    ERROR_QUIET)
+  if (BUNDLED_BISON_RESULT EQUAL 0)
+    list(APPEND CMAKE_PREFIX_PATH "${PROJECT_SOURCE_DIR}/deps/bison/bison-install")
+  else()
+    message(STATUS "Bundled Bison is not runnable; searching the system instead")
+  endif()
+endif()
 list(APPEND CMAKE_PREFIX_PATH "${PROJECT_SOURCE_DIR}/deps/flex/flex-install")
 if (APPLE)
   list(APPEND CMAKE_PREFIX_PATH "/usr/local/opt/bison")
@@ -81,9 +109,17 @@ if (NOT EXISTS "${SMT_SWITCH_DIR}/local/lib/libsmt-switch.a")
   message(FATAL_ERROR "Missing smt-switch library -- try running ./contrib/setup-smt-switch.sh")
 endif()
 
-if (NOT EXISTS "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-btor.a")
-  message(FATAL_ERROR "Missing smt-switch boolector library -- try running ./contrib/setup-smt-switch.sh")
+if (NOT EXISTS "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-bitwuzla.a")
+  message(FATAL_ERROR "Missing smt-switch Bitwuzla library -- try running ./contrib/setup-smt-switch.sh")
 endif()
+
+file(GLOB BITWUZLA_LIBRARIES
+  "${SMT_SWITCH_DIR}/deps/install/lib/*/libbitwuzla*.a")
+if (NOT BITWUZLA_LIBRARIES)
+  message(FATAL_ERROR "Missing Bitwuzla libraries -- try running ./contrib/setup-smt-switch.sh")
+endif()
+file(GLOB BITWUZLA_SAT_LIBRARIES
+  "${SMT_SWITCH_DIR}/deps/install/lib/*/libcryptominisat5.a")
 
 
 
@@ -107,6 +143,7 @@ FLEX_TARGET(SMVScanner ${PROJECT_SOURCE_DIR}/frontends/smvparser.l
 ADD_FLEX_BISON_DEPENDENCY(SMVScanner SMVParser)
 
 set(INCLUDE_DIRS
+  "${CMAKE_CURRENT_BINARY_DIR}"
   "${PROJECT_SOURCE_DIR}"
   "${PROJECT_SOURCE_DIR}/contrib/"
   "${PROJECT_SOURCE_DIR}/contrib/optionparser-1.7/src"
@@ -116,7 +153,6 @@ set(INCLUDE_DIRS
   "${PROJECT_SOURCE_DIR}/deps/vexpparser/src"
   "${PROJECT_SOURCE_DIR}/deps/vexpparser/build/src"
   "${SMT_SWITCH_DIR}/local/include"
-  "${CMAKE_CURRENT_BINARY_DIR}"
   "${GMP_INCLUDE_DIR}"
   "${FLEX_INCLUDE_DIRS}"
   "${Boost_INCLUDE_DIRS}"
@@ -144,14 +180,19 @@ set(SOURCES
 
 
 
-add_library(wasim-lib "${WASIM_LIB_TYPE}" ${SOURCES})
+# The library/namespace and Python module names remain "wasim"/"pywasim" for
+# source and ABI compatibility. Forbench::lib is the preferred CMake name.
+add_library(wasim-lib "${FORBENCH_LIB_TYPE}" ${SOURCES})
+add_library(Forbench::lib ALIAS wasim-lib)
 set_target_properties(wasim-lib PROPERTIES OUTPUT_NAME wasim)
 
 target_include_directories(wasim-lib PUBLIC ${INCLUDE_DIRS})
 
 target_link_libraries(wasim-lib PUBLIC "${PROJECT_SOURCE_DIR}/deps/glog/install/lib/libglog.a")
-target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-btor.a")
+target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-bitwuzla.a")
 target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-cvc5.a")
+target_link_libraries(wasim-lib PUBLIC ${BITWUZLA_LIBRARIES})
+target_link_libraries(wasim-lib PUBLIC ${BITWUZLA_SAT_LIBRARIES})
 target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch.a")
 target_link_libraries(wasim-lib PUBLIC "${PROJECT_SOURCE_DIR}/deps/btor2tools/build/lib/libbtor2parser.a")
 target_link_libraries(wasim-lib PUBLIC "${PROJECT_SOURCE_DIR}/deps/vexpparser/build/src/libvexpparser.a")
@@ -213,7 +254,7 @@ if (BUILD_PYTHON_BINDINGS)
     add_library(pywasimbase MODULE python/pywasimbase.cpp)
     target_link_libraries(pywasimbase ${Boost_LIBRARIES} ${Python_LIBRARIES})
     target_link_libraries(pywasimbase ${LIBRT})
-    target_link_libraries(pywasimbase wasim-lib)
+    target_link_libraries(pywasimbase Forbench::lib)
     target_include_directories(pywasimbase PRIVATE ${INCLUDE_DIRS})
     target_include_directories(pywasimbase PRIVATE ${Python_INCLUDE_DIRS})
     
@@ -255,10 +296,10 @@ endif()
 
 
 add_executable(test "apps/test.cpp")
-target_link_libraries(test wasim-lib)
+target_link_libraries(test Forbench::lib)
 
 add_executable(test-tac "apps/test-tac.cpp")
-target_link_libraries(test-tac wasim-lib)
+target_link_libraries(test-tac Forbench::lib)
 
 # add_executable(independence_check_test "independence_check_test.cpp")
 # target_link_libraries(independence_check_test wasim)
@@ -270,4 +311,7 @@ target_link_libraries(test-tac wasim-lib)
 # target_link_libraries(symsim_test wasim)
 
 # generate dependent header
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/config/testpath.h.in"  "${CMAKE_CURRENT_SOURCE_DIR}/config/testpath.h")
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/config")
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/config/testpath.h.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/config/testpath.h")

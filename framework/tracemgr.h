@@ -1,6 +1,6 @@
 #pragma once
 #include <set>
-#include "smt-switch/boolector_factory.h"
+#include "smt-switch/bitwuzla_factory.h"
 #include "smt-switch/cvc5_factory.h"
 #include "smt-switch/smt.h"
 #include "term_manip.h"

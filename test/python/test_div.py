@@ -23,7 +23,7 @@ dut = pywasim.Dut('../../design/pywasim-test/div.btor2')
 sim = pywasim.async_simulator(dut)
 
 dut.set_init()
-dut.print_curr_sv()
+dut.print_curr_sv_all_branches()
 
 run1(sim, dut, pywasim)  # pywasim.run_later(run1(sim, dut, pywasim))
 pywasim.start_loop(sim, dut, 100)
