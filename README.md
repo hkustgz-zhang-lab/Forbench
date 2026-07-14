@@ -1,4 +1,4 @@
-# Forbench
+# Forbench: Symbolic Simulation Helps Make Your Testbench More Formal
 
 Forbench makes hardware testbenches “more formal”: it preserves the procedural,
 stimulus-driven workflow of RTL simulation while representing signals and state transitions symbolically
@@ -9,7 +9,18 @@ system. A testbench may assign either concrete values or symbolic values to DUT
 inputs, advance the design cycle by cycle, constrain the explored behaviors,
 and prove or refute assertions over the resulting symbolic states.
 
-## Introduction
+## 📋 Table of Contents
+
+- [📖 Introduction](#introduction)
+  - [Prerequisite](#prerequisite)
+  - [Setup](#setup)
+- [🚀 Usage](#usage)
+  - [Input design](#input-design)
+  - [Active-stepping testbench](#active-stepping-testbench)
+  - [Coroutine-based testbench](#coroutine-based-testbench)
+- [🔗 Citation](#citation)
+
+## 📖 Introduction
 
 Conventional simulation is easy to deploy and offers an intuitive operational
 model, but each run covers only one concrete execution trace. Formal property
@@ -41,20 +52,6 @@ Core capabilities include:
 - assumptions and path constraints;
 - solver-backed assertion and embedded-property checking;
 - symbolic branching for variable-latency and concurrent protocols;
-- counterexample waveform generation in VCD format.
-
-### Naming and compatibility
-
-The project and CMake metadata are named **Forbench**. The established C++
-namespace (`wasim`), library filename (`libwasim`), and Python modules
-(`pywasim`, `pywasim_async`, and `pywasimbase`) are intentionally retained so
-that existing testbenches and downstream code continue to work. New CMake code
-may link to the namespaced target `Forbench::lib`; the legacy `wasim-lib` target
-remains available.
-
-After moving or renaming the source directory, rerun `./configure.sh` (or use a
-fresh CMake build directory). CMake caches absolute source paths, so an old
-`build/` directory must not be reused after the move.
 
 ### Prerequisite
 
@@ -72,7 +69,7 @@ fresh CMake build directory). CMake caches absolute source paths, so an old
     cd build
     make
 
-## Usage
+## 🚀 Usage
 
 ### Input design
 
@@ -140,8 +137,7 @@ python3 test_adder.py
 
 ### Coroutine-based testbench
 
-Coroutine testbenches are useful for variable-latency DUTs and concurrent
-drivers or monitors:
+Coroutine testbenches are useful for variable-latency DUTs and concurrent drivers:
 
 ```python
 import pywasim_async as pywasim
@@ -186,7 +182,7 @@ cd test/python
 python3 test_async.py
 ```
 
-## Citation
+## 🔗 Citation
 
 ```bibtex
 @inproceedings{yang2026forbench,
