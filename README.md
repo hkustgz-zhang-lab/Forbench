@@ -1,24 +1,19 @@
 # Forbench: Symbolic Simulation Helps Make Your Testbench More Formal
 
-Forbench makes hardware testbenches “more formal”: it preserves the procedural,
-stimulus-driven workflow of RTL simulation while representing signals and state transitions symbolically
-and using an SMT solver to check constraints and assertions.
+Forbench is a symbolic simulation framework for Python-style formal testbenches. It makes hardware testbenches more formal by preserving the familiar procedural, stimulus-driven workflow of RTL simulation while representing signals and state transitions symbolically and using an SMT solver to check constraints and assertions.
 
-The framework consumes a hardware design represented as a BTOR2 transition
-system. A testbench may assign either concrete values or symbolic values to DUT
-inputs, advance the design cycle by cycle, constrain the explored behaviors,
-and prove or refute assertions over the resulting symbolic states.
+The framework operates on hardware designs represented as transition systems. A testbench can assign either concrete or symbolic values to DUT inputs, advance the design cycle by cycle, constrain the explored behaviors, and prove assertions over the resulting symbolic states.
 
 ## 📋 Table of Contents
 
-- [📖 Introduction](#introduction)
+- [📖 Introduction](#-introduction)
   - [Prerequisite](#prerequisite)
   - [Setup](#setup)
-- [🚀 Usage](#usage)
+- [🚀 Usage](#-usage)
   - [Input design](#input-design)
   - [Active-stepping testbench](#active-stepping-testbench)
   - [Coroutine-based testbench](#coroutine-based-testbench)
-- [🔗 Citation](#citation)
+- [🔗 Citation](#-citation)
 
 ## 📖 Introduction
 
@@ -35,10 +30,10 @@ represented by the current symbolic state and path constraints.
 
 The framework supports two complementary testbench styles:
 
-- **Active stepping:** a single testbench explicitly drives inputs and calls
+- **Active-stepping:** a single testbench explicitly drives inputs and calls
   `dut.step()` to advance the DUT. This style is useful for fixed-latency
   datapaths and cycle-accurate checks.
-- **Coroutine based:** concurrent testbench tasks are registered with
+- **Coroutine-based:** concurrent testbench tasks are registered with
   `@register_task` and synchronized using `wait_cycle`, `wait_cond`, and
   `wait_task`. When a `wait_cond` condition can be both true and false under
   the current symbolic constraints, Forbench forks the symbolic execution and
@@ -48,9 +43,9 @@ Core capabilities include:
 
 - concrete and symbolic input assignments;
 - reset-based or unconstrained symbolic initialization;
-- cycle-accurate symbolic state transitions;
 - assumptions and path constraints;
-- solver-backed assertion and embedded-property checking;
+- cycle and coroutine-based simulation;
+- solver-backed assertion and property checking;
 - symbolic branching for variable-latency and concurrent protocols;
 
 ### Prerequisite
@@ -119,14 +114,12 @@ An integer assignment, such as `dut.a.value = 3`, is concrete. A string
 assignment, such as `dut.a.value = "a1"`, creates or refers to a symbolic
 value. Useful active-stepping operations include:
 
-- `dut.set_init(overrides)` — initialize from the BTOR2 initial condition;
-- `dut.free_init(overrides)` — start from unconstrained symbolic state;
+- `dut.set_init()` — initialize from the BTOR2 initial condition;
+- `dut.free_init()` — start from unconstrained symbolic state;
 - `dut.step(n)` — advance by one or more cycles;
-- `dut.set_constraint(expr)` — restrict feasible symbolic behaviors;
-- `dut.check_assertion(expr)` — prove the expression under current
-  assumptions;
-- `dut.check_prop()` — check a property embedded in the BTOR2 model;
-- `dut.back_step()` — return to the previous symbolic cycle.
+- `dut.set_constraint(expr)` — add a constraint;
+- `dut.check_assertion(expr)` — check the assertion expr;
+- `dut.check_prop()` — check the property in the BTOR2 model;
 
 Run a small active-stepping example with:
 
@@ -166,14 +159,11 @@ pywasim.start_loop(sim, dut, 100)
 
 The main coroutine control operations are:
 
-- `sim.wait_cycle(n)` — suspend the current task for `n` cycles;
-- `sim.wait_cond(expr)` — wait until a symbolic condition holds, forking when
-  both outcomes are feasible;
-- `sim.wait_task(task)` — wait for another registered task to finish;
-- `sim.check_assertion(expr)` — check an assertion on the current symbolic
-  branch;
-- `pywasim.start_loop(sim, dut, bound)` — run all registered tasks up to the
-  specified cycle bound.
+- `sim.wait_cycle(n)` — wait `n` cycles and synchronize simulation with concurrent tasks;
+- `sim.wait_cond(expr)` — wait until a condition holds, forking when both outcomes are feasible;
+- `sim.wait_task(task)` — wait for another registered task;
+- `sim.check_assertion(expr)` — check an assertion on the current branch;
+- `pywasim.start_loop(sim, dut, bound)` — run all registered tasks up to the cycle bound.
 
 Run the multiplier example with:
 
@@ -183,7 +173,7 @@ python3 test_async.py
 ```
 
 ## 🔗 Citation
-
+If you find this repository is useful, please star🌟 this repo and cite🖇️ our paper.
 ```bibtex
 @inproceedings{yang2026forbench,
   title     = {Forbench: Symbolic Simulation Helps Make Your Testbench More Formal},

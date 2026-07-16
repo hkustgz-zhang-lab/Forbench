@@ -1,6 +1,0 @@
-TODO: sovler reset assertions
-    solution: always use push and pop when assert formulas?
-    // s->push();
-    // s->assert_formula(expr);
-    // auto res1 = s->check_sat();
-    // s->pop();
