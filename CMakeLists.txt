@@ -132,6 +132,10 @@ if (NOT EXISTS "${PROJECT_SOURCE_DIR}/deps/glog/install/lib/libglog.a")
   message(FATAL_ERROR "Missing glog -- try running ./contrib/setup-glog.sh")
 endif()
 
+find_package(glog CONFIG REQUIRED
+  PATHS "${PROJECT_SOURCE_DIR}/deps/glog/install/lib/cmake/glog"
+  NO_DEFAULT_PATH)
+
 # Generate the SMV parser using Flex/Bison
 BISON_TARGET(SMVParser ${PROJECT_SOURCE_DIR}/frontends/smvparser.y
   ${CMAKE_CURRENT_BINARY_DIR}/smvparser.cpp
@@ -188,7 +192,7 @@ set_target_properties(wasim-lib PROPERTIES OUTPUT_NAME wasim)
 
 target_include_directories(wasim-lib PUBLIC ${INCLUDE_DIRS})
 
-target_link_libraries(wasim-lib PUBLIC "${PROJECT_SOURCE_DIR}/deps/glog/install/lib/libglog.a")
+target_link_libraries(wasim-lib PUBLIC glog::glog)
 target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-bitwuzla.a")
 target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch-cvc5.a")
 target_link_libraries(wasim-lib PUBLIC ${BITWUZLA_LIBRARIES})
