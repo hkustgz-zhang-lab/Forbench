@@ -21,7 +21,7 @@ int main() {
   solver->set_opt("produce-unsat-assumptions", "true");
 
   TransitionSystem sts(solver);
-  BTOR2Encoder btor_parser("../design/test/adder.btor2", sts);
+  BTOR2Encoder btor_parser(PROJECT_SOURCE_DIR "/design/test/adder.btor2", sts);
 
   std::cout << sts.trans()->to_string() << std::endl;
   

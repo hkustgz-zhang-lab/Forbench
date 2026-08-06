@@ -6,12 +6,6 @@ set(FORBENCH_MAJOR ${PROJECT_VERSION_MAJOR})
 set(FORBENCH_MINOR ${PROJECT_VERSION_MINOR})
 set(FORBENCH_RELEASE ${PROJECT_VERSION_PATCH})
 
-# WASIM is the historical API name. Keep the old variables for downstream
-# projects while exposing Forbench-branded names for new integrations.
-set(WASIM_MAJOR ${FORBENCH_MAJOR})
-set(WASIM_MINOR ${FORBENCH_MINOR})
-set(WASIM_RELEASE ${FORBENCH_RELEASE})
-
 # handle different versions of CMake
 if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0 AND NOT APPLE)
   set(CMAKE_CXX17_STANDARD_COMPILE_OPTION "-std=c++17")
@@ -27,7 +21,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 add_definitions(-DFORBENCH_SRC_DIR=${PROJECT_SOURCE_DIR})
-add_definitions(-DWASIM_SRC_DIR=${PROJECT_SOURCE_DIR})
 
 if (DEFINED WASIM_LIB_TYPE AND NOT DEFINED FORBENCH_LIB_TYPE)
   message(DEPRECATION
@@ -305,14 +298,8 @@ target_link_libraries(test Forbench::lib)
 add_executable(test-tac "apps/test-tac.cpp")
 target_link_libraries(test-tac Forbench::lib)
 
-# add_executable(independence_check_test "independence_check_test.cpp")
-# target_link_libraries(independence_check_test wasim)
-
-# add_executable(solver_test "solver_test.cpp")
-# target_link_libraries(solver_test wasim)
-
-# add_executable(symsim_test "symsim_test.cpp")
-# target_link_libraries(symsim_test wasim)
+add_executable(test-solver "apps/test-solver.cpp")
+target_link_libraries(test-solver Forbench::lib)
 
 # generate dependent header
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/config")
