@@ -341,6 +341,7 @@ Term TransitionSystem::make_inputvar(const string name, const Sort & sort)
   add_inputvar(input);
   // Bitwuzla quotes symbols with SMT-LIB special characters in to_string().
   // Preserve the original BTOR2 name as an additional lookup key.
+  // The quoted string is registered in `add_inputvar`
   name_term(name, input);
   return input;
 }
@@ -353,6 +354,9 @@ Term TransitionSystem::make_statevar(const string name, const Sort & sort)
   Term state = solver_->make_symbol(name, sort);
   Term next_state = solver_->make_symbol(name + ".next", sort);
   add_statevar(state, next_state);
+  // Bitwuzla quotes symbols with SMT-LIB special characters in to_string().
+  // Preserve the original BTOR2 name as an additional lookup key.
+  // The quoted string is registered in `add_statevar`
   name_term(name, state);
   name_term(name + ".next", next_state);
   return state;

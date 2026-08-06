@@ -203,25 +203,12 @@ void SymbolicSimulatorBranch::dump_waveform(const std::string &fname, const smt:
         if (ts_.is_next_var(term_)) continue;
         if (vmap.find(term_) != vmap.end()) continue;
         // else
-        auto term_value = replacement_and_constant_propagation(term_, vmap, solver_);
-        if (!term_value->is_value())
-          term_value = solver_->get_value(term_value);
+        auto term_value = solver_->get_value(term_); // replacement_and_constant_propagation(term_, vmap, solver_);
         // auto term_value = solver_->substitute(term_, vmap);
         //if (!term_value->is_value())
         // std::cout << str_term.first << " @" << t << " : " << term_value->to_raw_string() << std::endl;
         assert(term_value->is_value()); // should be value after substitution
         vmap.emplace(term_, term_value);
-        // if (str_term.first == "ctrlLogic.io_memCtrl_fetchEna" && t == 2) {
-        //   // merge st/iv
-        //   auto tmap = st;
-        //   for (const auto & p : iv)
-        //     tmap.emplace(p.first,p.second);
-        //   auto new_t = solver_->substitute(term_, tmap);
-        //   std::ofstream fout("internal_asmpt.txt");
-        //   fout << term_->to_string() << std::endl;
-        //   fout << "------------------" << std::endl;
-        //   fout << new_t->to_string() << std::endl;
-        // }
       }
     }
   }
