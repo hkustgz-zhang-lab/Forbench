@@ -255,12 +255,12 @@ namespace wasim {
 
     NodeRef* logicalAndInt(int r) const 
     {
-        return _binOpL(smt::PrimOp::BVAnd, "bvand", r);
+        return _binOpL(smt::PrimOp::And, smt::PrimOp::BVAnd, "and bv/bool", r);
     }
 
     NodeRef* logicalAndRInt(int l) const
     {
-        return _binOpR(smt::PrimOp::BVAnd, "bvand", l);
+        return _binOpR(smt::PrimOp::And, smt::PrimOp::BVAnd, "and bv/bool", l);
     }
 
     NodeRef* logicalOr(NodeRef* other) const
@@ -270,12 +270,12 @@ namespace wasim {
 
     NodeRef* logicalOrInt(int r) const
     {
-        return _binOpL(smt::PrimOp::BVOr, "bvor", r);
+        return _binOpL(smt::PrimOp::Or, smt::PrimOp::BVOr, "or bv/bool", r);
     }
 
     NodeRef* logicalOrRInt(int l) const
     {
-        return _binOpR(smt::PrimOp::BVOr, "bvor", l);
+        return _binOpR(smt::PrimOp::Or, smt::PrimOp::BVOr, "or bv/bool", l);
     }
 
     NodeRef* logicalXor(NodeRef* other) const
@@ -285,12 +285,12 @@ namespace wasim {
 
     NodeRef* logicalXorInt(int r) const
     {
-        return _binOpL(smt::PrimOp::BVXor, "bvxor", r);
+        return _binOpL(smt::PrimOp::Xor, smt::PrimOp::BVXor, "xor bv/bool", r);
     }
 
     NodeRef* logicalXorRInt(int l) const
     {
-        return _binOpR(smt::PrimOp::BVXor, "bvxor", l);
+        return _binOpR(smt::PrimOp::Xor, smt::PrimOp::BVXor, "xor bv/bool", l);
     }
 
     // add //
@@ -301,12 +301,12 @@ namespace wasim {
 
     NodeRef* addInt(int r) const
     {
-        return _binOpL(smt::PrimOp::BVAdd, "bvadd", r);
+        return _bv_binOpL(smt::PrimOp::BVAdd, "bvadd", r);
     }
 
     NodeRef* raddInt(int r) const
     {
-        return _binOpR(smt::PrimOp::BVAdd, "bvadd", r);
+        return _bv_binOpR(smt::PrimOp::BVAdd, "bvadd", r);
     }
 
     // sub //
@@ -317,12 +317,12 @@ namespace wasim {
 
     NodeRef* subInt(int r) const
     {
-        return _binOpL(smt::PrimOp::BVSub, "bvsub", r);
+        return _bv_binOpL(smt::PrimOp::BVSub, "bvsub", r);
     }
 
     NodeRef* rsubInt(int r) const
     {
-        return _binOpR(smt::PrimOp::BVSub, "bvsub", r);
+        return _bv_binOpR(smt::PrimOp::BVSub, "bvsub", r);
     }
 
     // udiv //
@@ -333,12 +333,12 @@ namespace wasim {
 
     NodeRef* udivInt(int r) const
     {
-        return _binOpL(smt::PrimOp::BVUdiv, "bvudiv", r);
+        return _bv_binOpL(smt::PrimOp::BVUdiv, "bvudiv", r);
     }
 
     NodeRef* rudivInt(int r) const
     {
-        return _binOpR(smt::PrimOp::BVUdiv, "bvudiv", r);
+        return _bv_binOpR(smt::PrimOp::BVUdiv, "bvudiv", r);
     }
 
     // urem //
@@ -349,12 +349,12 @@ namespace wasim {
 
     NodeRef* uremInt(int r)
     {
-        return _binOpL(smt::PrimOp::BVUrem, "bvurem", r);
+        return _bv_binOpL(smt::PrimOp::BVUrem, "bvurem", r);
     }
 
     NodeRef* ruremInt(int l)
     {
-        return _binOpR(smt::PrimOp::BVUrem, "bvurem", l);
+        return _bv_binOpR(smt::PrimOp::BVUrem, "bvurem", l);
     }
 
     // shl
@@ -365,12 +365,12 @@ namespace wasim {
 
     NodeRef* shlInt(int r) const
     {
-        return _binOpL(smt::PrimOp::BVShl, "bvshl", r);
+        return _bv_binOpL(smt::PrimOp::BVShl, "bvshl", r);
     }
 
     NodeRef* rshlInt(int r) const
     {
-        return _binOpR(smt::PrimOp::BVShl, "bvshl", r);
+        return _bv_binOpR(smt::PrimOp::BVShl, "bvshl", r);
     }
 
     // shr //
@@ -381,12 +381,12 @@ namespace wasim {
 
     NodeRef* lshrInt(int r) const
     {
-        return _binOpL(smt::PrimOp::BVLshr, "bvlshr", r);
+        return _bv_binOpL(smt::PrimOp::BVLshr, "bvlshr", r);
     }
 
     NodeRef* rlshrInt(int r) const
     {
-        return _binOpR(smt::PrimOp::BVLshr, "bvlshr", r);
+        return _bv_binOpR(smt::PrimOp::BVLshr, "bvlshr", r);
     }
 
     // mul //
@@ -397,12 +397,12 @@ namespace wasim {
 
     NodeRef* mulInt(int r) const
     {
-        return _binOpL(smt::PrimOp::BVMul, "bvmul", r);
+        return _bv_binOpL(smt::PrimOp::BVMul, "bvmul", r);
     }
 
     NodeRef* rmulInt(int r) const
     {
-        return _binOpR(smt::PrimOp::BVMul, "bvmul", r);
+        return _bv_binOpR(smt::PrimOp::BVMul, "bvmul", r);
     }
 
     // eq/neq //
@@ -413,12 +413,12 @@ namespace wasim {
 
     NodeRef* eqInt(int r) const
     {
-        return _binOpL(smt::PrimOp::Equal, "equal", r);
+        return _binOpL(smt::PrimOp::Equal, smt::PrimOp::Equal, "equal", r);
     }
 
     NodeRef* eqIntR(int l) const
     {
-        return _binOpR(smt::PrimOp::Equal, "equal", l);
+        return _binOpR(smt::PrimOp::Equal, smt::PrimOp::Equal, "equal", l);
     }
 
     NodeRef* neq(NodeRef * other) const
@@ -428,12 +428,12 @@ namespace wasim {
 
     NodeRef* neqInt(int r) const
     {
-        return _binOpL(smt::PrimOp::Distinct, "distinct", r);
+        return _binOpL(smt::PrimOp::Distinct, smt::PrimOp::Distinct, "distinct", r);
     }
 
     NodeRef* neqIntR(int l) const
     {
-        return _binOpR(smt::PrimOp::Distinct, "distinct", l);
+        return _binOpR(smt::PrimOp::Distinct, smt::PrimOp::Distinct, "distinct", l);
     }
 
 
@@ -444,12 +444,12 @@ namespace wasim {
 
     NodeRef* ultInt(int r) const
     {
-        return _binOpL(smt::PrimOp::BVUlt, "bvult", r);
+        return _bv_binOpL(smt::PrimOp::BVUlt, "bvult", r);
     }
 
     NodeRef* ultIntR(int l) const
     {
-        return _binOpR(smt::PrimOp::BVUlt, "bvult", l);
+        return _bv_binOpR(smt::PrimOp::BVUlt, "bvult", l);
     }
 
 
@@ -460,12 +460,12 @@ namespace wasim {
 
     NodeRef* ugtInt(int r) const
     {
-        return _binOpL(smt::PrimOp::BVUgt, "bvugt", r);
+        return _bv_binOpL(smt::PrimOp::BVUgt, "bvugt", r);
     }
 
     NodeRef* ugtIntR(int l) const
     {
-        return _binOpR(smt::PrimOp::BVUgt, "bvugt", l);
+        return _bv_binOpR(smt::PrimOp::BVUgt, "bvugt", l);
     }
 
 
@@ -476,12 +476,12 @@ namespace wasim {
 
     NodeRef* uleInt(int r) const
     {
-        return _binOpL(smt::PrimOp::BVUle, "bvule", r);
+        return _bv_binOpL(smt::PrimOp::BVUle, "bvule", r);
     }
 
     NodeRef* uleIntR(int l) const
     {
-        return _binOpR(smt::PrimOp::BVUle, "bvule", l);
+        return _bv_binOpR(smt::PrimOp::BVUle, "bvule", l);
     }
 
 
@@ -492,12 +492,12 @@ namespace wasim {
 
     NodeRef* ugeInt(int r) const
     {
-        return _binOpL(smt::PrimOp::BVUge, "bvuge", r);
+        return _bv_binOpL(smt::PrimOp::BVUge, "bvuge", r);
     }
 
     NodeRef* ugeIntR(int l) const
     {
-        return _binOpR(smt::PrimOp::BVUge, "bvuge", l);
+        return _bv_binOpR(smt::PrimOp::BVUge, "bvuge", l);
     }
 
     NodeRef* getItemInt(int idx) const
@@ -611,20 +611,60 @@ namespace wasim {
         return NULL;
     }
 
-    NodeRef* _binOpL(smt::PrimOp op, const char* opName, int r) const
+    NodeRef* _bv_binOpL(smt::PrimOp bvOp, const char* opName, int r) const
     {
       auto sz = bvwidth();
-      if(sz != 0) {
+      if (sz == 0) { // not a bitvector
+        throw PyWASIMException(PyExc_TypeError, std::string("Incorrect type for ") + 
+                            opName);
+      } // report error
+
+      try{
+        auto cterm = solver->make_term(r, solver->make_sort(smt::SortKind::BV, sz));
+        return new NodeRef(solver->make_term(bvOp, node, cterm), solver);
+      } catch (SmtException e) {
+        throw PyWASIMException(PyExc_TypeError, e.what());
+      }
+
+      throw PyWASIMException(PyExc_TypeError, std::string("Incorrect type for ") + 
+                            opName);
+      return NULL;
+    }
+
+    NodeRef* _bv_binOpR(smt::PrimOp bvOp, const char* opName, int l) const
+    {
+      auto sz = bvwidth();
+      if (sz == 0) { // not a bitvector
+        throw PyWASIMException(PyExc_TypeError, std::string("Incorrect type for ") + 
+                            opName);
+      } // report error
+
+      try{
+        auto cterm = solver->make_term(l, solver->make_sort(smt::SortKind::BV, sz));
+        return new NodeRef(solver->make_term(bvOp, cterm, node), solver);
+      } catch (SmtException e) {
+        throw PyWASIMException(PyExc_TypeError, e.what());
+      }
+
+      throw PyWASIMException(PyExc_TypeError, std::string("Incorrect type for ") + 
+                            opName);
+      return NULL;
+    }
+
+    NodeRef* _binOpL(smt::PrimOp boolOp, smt::PrimOp bvOp, const char* opName, int r) const
+    {
+      auto sz = bvwidth();
+      if(sz != 0) { // if it is a bit-vector
         try{
           auto cterm = solver->make_term(r, solver->make_sort(smt::SortKind::BV, sz));
-          return new NodeRef(solver->make_term(op, node, cterm), solver);
+          return new NodeRef(solver->make_term(bvOp, node, cterm), solver);
         } catch (SmtException e) {
           throw PyWASIMException(PyExc_TypeError, e.what());
         }
       } else if (isbool()) {
         try{
           auto cterm = solver->make_term((bool)(r));
-          return new NodeRef(solver->make_term(op, node, cterm), solver);
+          return new NodeRef(solver->make_term(boolOp, node, cterm), solver);
         } catch (SmtException e) {
           throw PyWASIMException(PyExc_TypeError, e.what());
         }
@@ -634,20 +674,20 @@ namespace wasim {
       return NULL;
     }
 
-    NodeRef* _binOpR(smt::PrimOp op, const char* opName, int r) const
+    NodeRef* _binOpR(smt::PrimOp boolOp, smt::PrimOp bvOp, const char* opName, int r) const
     {
       auto sz = bvwidth();
       if(sz != 0) {
         try{
           auto cterm = solver->make_term(r, solver->make_sort(smt::SortKind::BV, sz));
-          return new NodeRef(solver->make_term(op, cterm, node ), solver);
+          return new NodeRef(solver->make_term(bvOp, cterm, node ), solver);
         } catch (SmtException e) {
           throw PyWASIMException(PyExc_TypeError, e.what());
         }
       } else if (isbool()) {
         try{
           auto cterm = solver->make_term((bool)(r));
-          return new NodeRef(solver->make_term(op, cterm, node), solver);
+          return new NodeRef(solver->make_term(boolOp, cterm, node), solver);
         } catch (SmtException e) {
           throw PyWASIMException(PyExc_TypeError, e.what());
         }
