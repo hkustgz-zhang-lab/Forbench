@@ -8,6 +8,7 @@ sys.path.append(build_dir)
 
 from pywasimbase import *
 # TransSys, Simsimulator
+from pywasim_log import debug_log, msg_log, warn_signal_contains_current_input
 
 class Dut:
     def __init__(self, btorname):
@@ -28,17 +29,17 @@ class Dut:
     def _get_property(self):
         prop_list = self.ts.prop()
         if not prop_list:
-            print("No property to check!")
+            msg_log("No property to check!")
             return None
         elif len(prop_list) == 1:
-            print("property:", prop_list[0])
+            msg_log("property:", prop_list[0])
             return prop_list[0]
         else:
             prop_i = prop_list[0]
             for idx in range(1, len(prop_list)):
                 # prop_i = pywasim.make_term("And", prop_i, prop_list[idx])
                 prop_i = prop_i & prop_list[idx]
-            print("property:", prop_i)
+            msg_log("property:", prop_i)
             return prop_i
 
     def _create_iv_dict(self):
@@ -102,9 +103,9 @@ class Dut:
     def check_prop(self):
         cur_prop = self.simulator.interpret_state_expr_on_curr_frame(self.prop)
         assumptions = self.simulator.all_assumptions()
-        print(f"property: {cur_prop.to_string()}")
+        msg_log(f"property: {cur_prop.to_string()}")
         for a in assumptions:
-            print(f"assumption: {a.to_string()}")
+            msg_log(f"assumption: {a.to_string()}")
 
         self.solver.push()
         for a in assumptions:
@@ -115,13 +116,13 @@ class Dut:
         self.solver.pop()
 
         if res:
-            print("check prop result: fail!")
+            msg_log("check prop result: fail!")
         else:
-            print("check prop result: pass!")
+            msg_log("check prop result: pass!")
         return not res  # unsat -> return True
 
     def check_sat(self, asst, asmpts):
-        print('dut.check_sat')
+        debug_log('dut.check_sat')
         asmpts_all = self.simulator.all_assumptions()
         asmpts_all.extend(asmpts)
         asmpts_all.extend(self.constraints)
@@ -129,17 +130,17 @@ class Dut:
         return self.solver.check_sat_assuming(asmpts_all)
 
     def check_assertion(self, assertion):
-        print(f"dut.check_assertion: {assertion.to_string()}")
+        msg_log(f"dut.check_assertion: {assertion.to_string()}")
 
         self.solver.push()
         formula = ~assertion    # make_term(not, assertion)
         self.solver.assert_formula(formula)
         res = self.solver.check_sat()
         if res:
-            print("check assertion result: fail!")
+            msg_log("check assertion result: fail!")
             self.simulator.dump_waveform('cex.vcd', self.iv_term_dict, True)
         else:
-            print("check assertion result: pass!")
+            msg_log("check assertion result: pass!")
         self.solver.pop()
 
         return not res
@@ -179,7 +180,7 @@ class SignalProxy:
 
         nf = self.dut.simulator.var(self.name)
         if nf in iv_term_dict:
-            print(f"Warning: expr(dut.{self.name}.value) contains current inputvars; Modifying related inputvars afterward may cause (dut.{self.name}.value) changed.")
+            warn_signal_contains_current_input(self.name)
             return iv_term_dict[nf]
         
         # get current term of signal
@@ -188,7 +189,7 @@ class SignalProxy:
             return signal_nr
         except Exception:
             signal_nr = self.dut.simulator.interpret_input_and_state_expr_on_curr_frame(nf, iv_term_dict)  # have state vars and input vars
-            print(f"Warning: expr(dut.{self.name}.value) contains current inputvars; Modifying related inputvars afterward may cause (dut.{self.name}.value) changed.")
+            warn_signal_contains_current_input(self.name)
             return signal_nr
 
     @value.setter
