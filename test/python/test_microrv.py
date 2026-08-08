@@ -79,7 +79,7 @@ def check_insn(sim, dut, spec_model, inst, check_extra):
       with sim.assume((spec_valid == 0) & (spec_other_type_decode == 0)): # mret fence,ecall, csr
         sim.check_assertion(dut_trap == 1)
 
-    with sim.assume(spec_valid == 1):
+    with sim.assume(spec_valid == 1): # this does not create branch
         sim.check_assertion(dut_rs1_rdata == 0, asmpts = [dut_rs1_addr == 0])
         sim.check_assertion(dut_rs2_rdata == 0, asmpts = [dut_rs2_addr == 0])
         sim.check_assertion(spec_trap == dut_trap)
@@ -113,21 +113,23 @@ def test1(sim, dut):
     dut.set_constraint(dut.get_signal('regs.regFile[0]').value == 0)
 
     # start from here
-    print("test_set")
-    dut.reset.value_def = 0 # default: not reset
+    print("---- Test Starts ----")
+    dut.reset.value_def = 0 # default: no reset
     dut.io_memIF_IMem_instructionReady.value = 0
 
     can_sat = dut.check_sat(dut.io_memIF_IMem_fetchEnable.value == 1, [])
-    while not can_sat:
+    # go to the earliest cycle when DUT can fetch an instruction
+    while not can_sat: # NOTE: there is no branch here
         sim.wait_cycle()
         dut.io_memIF_IMem_instructionReady.value = 0
         can_sat = dut.check_sat(dut.io_memIF_IMem_fetchEnable.value == 1, [])
+        
     # apply input
     dut.io_memIF_IMem_instructionReady.value = 1
     dut.io_memIF_IMem_instruction.value = 'inst' # assign symbolic instruction
     print('-- cycle:',sim.current_cycle(), 'inst applied')
     sim.wait_cycle()
-    while dut.rvfi_valid.value == 0:
+    while dut.rvfi_valid.value == 0: # HERE - you will have branches
         sim.wait_cycle()
     print('-- cycle:',sim.current_cycle(), 'inst check')
     inst = sim.get_var('inst')
