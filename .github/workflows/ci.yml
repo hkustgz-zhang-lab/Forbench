@@ -28,6 +28,7 @@ jobs:
             curl \
             default-jre \
             git \
+            libfl-dev \
             libboost-all-dev \
             libgmp-dev \
             m4 \
