@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  full-source-build:
+    name: Full source build with cached dependencies
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ca-certificates \
+            cmake \
+            curl \
+            default-jre \
+            git \
+            libboost-all-dev \
+            libgmp-dev \
+            m4 \
+            perl \
+            pkg-config \
+            python3-dev \
+            python3-pip
+          python3 -m pip install --upgrade pip
+          python3 -m pip install toml
+
+      - name: Restore dependency cache
+        id: cache-deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps/glog
+            deps/bison
+            deps/flex
+            deps/btor2tools
+            deps/smt-switch
+            deps/vexpparser
+          key: ${{ runner.os }}-deps-${{ hashFiles('contrib/setup-*.sh', 'CMakeLists.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-deps-
+
+      - name: Build missing dependencies
+        env:
+          NPROC: 2
+        run: |
+          set -euxo pipefail
+          export NPROC="$(nproc)"
+
+          test -x deps/bison/bison-install/bin/bison \
+            || ./contrib/setup-bison.sh
+
+          test -x deps/flex/flex-install/bin/flex \
+            || ./contrib/setup-flex.sh
+
+          test -f deps/glog/install/lib/libglog.a \
+            || ./contrib/setup-glog.sh
+
+          test -f deps/btor2tools/build/lib/libbtor2parser.a \
+            || ./contrib/setup-btor2tools.sh
+
+          test -f deps/smt-switch/local/lib/libsmt-switch-bitwuzla.a \
+            || ./contrib/setup-smt-switch.sh
+
+          test -f deps/vexpparser/build/src/libvexpparser.a \
+            || ./contrib/setup-vexpparser.sh
+
+      - name: Configure Forbench
+        run: ./configure.sh --python
+
+      - name: Build Forbench
+        run: cmake --build build --parallel "$(nproc)"
+
+      - name: Check Python syntax
+        run: python3 -m py_compile test/python/pywasim.py test/python/pywasim_async.py test/python/pywasim_log.py
+
+      - name: Run Python smoke tests
+        working-directory: test/python
+        run: |
+          set -euxo pipefail
+          python3 test_adder.py
+          python3 test_async.py
+          python3 test_async_comb.py
+          python3 test_async_br1.py
