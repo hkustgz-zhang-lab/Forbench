@@ -360,13 +360,21 @@ smt::Term SymbolicSimulator::interpret_state_expr_on_curr_frame(
 }
 
 smt::Term SymbolicSimulator::interpret_input_and_state_expr_on_curr_frame(
-    const smt::Term & expr, const smt::UnorderedTermMap & iv_map) const
+    const smt::Term & expr, const smt::UnorderedTermMap & iv_map, bool sanity_check ) const
 {
   assert(trace_.size() != 0);
   if (!_expr_only_sv(expr)){
     const auto & sv_mapping = trace_.back();
     auto subs_mapping = sv_mapping;  // make a copy
     subs_mapping.insert(iv_map.begin(), iv_map.end());
+    if (sanity_check) { // in RefDesign, a user may accidentally use a signal before assigning to it. This should be avoided.
+      smt::UnorderedTermSet all_vars;
+      smt::get_free_symbols(expr, all_vars);
+      for (const auto & v : all_vars) {
+        if (subs_mapping.find(v) == subs_mapping.end()) // if not found
+          throw SimulatorException("[interpret check] expr contains: " + v->to_string() + " not in the map.");
+      }
+    }
     return solver_->substitute(expr, subs_mapping);
   }
   const auto & prev_sv = trace_.back();

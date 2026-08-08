@@ -1608,7 +1608,8 @@ namespace wasim {
       return new NodeRef(sptr->interpret_state_expr_on_curr_frame(expr->node), sptr->get_solver());
     }
 
-    NodeRef * interpret_input_and_state_expr_on_curr_frame(NodeRef * expr, const boost::python::dict & iv_term_dict) const {
+    // by default sanity_check is disabled (outside RefDesign) (because that takes time)
+    NodeRef * interpret_input_and_state_expr_on_curr_frame(NodeRef * expr, const boost::python::dict & iv_term_dict, bool sanity_check = false) const {
       smt::UnorderedTermMap iv_map;
       boost::python::list items = iv_term_dict.items();
       for(ssize_t i = 0; i < len(items); ++i) {
@@ -1622,7 +1623,7 @@ namespace wasim {
           else
             throw PyWASIMException(PyExc_RuntimeError, "Expecting Term->Term map in interpret_input_and_state_expr_on_curr_frame");
       }
-      return new NodeRef(sptr->interpret_input_and_state_expr_on_curr_frame(expr->node, iv_map), sptr->get_solver());
+      return new NodeRef(sptr->interpret_input_and_state_expr_on_curr_frame(expr->node, iv_map, sanity_check), sptr->get_solver());
     }
 
     /// do simulation

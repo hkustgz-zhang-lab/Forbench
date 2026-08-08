@@ -97,15 +97,38 @@ class Dut_Branch:
 class RefDesign:
     # You can only have one DUT per testbench
     # but you can load other BTOR2 as reference designs
-    def __init__(self, btorname, solver, prefix):
+    # the usage of RefDesign is that you set input and get the related signals
+    # We explicited require assigning all inputs for the reference (no implicit X)
+
+    def __init__(self, btorname, solver, prefix = "SPEC::"):
         # btorname: path to the btor2 file
         # solver: you should use the same solver as the Dut
         # prefix: a prefix to the variable names in the RefDesign
         #         this is to avoid name conflict if Dut and RefDesign
         #         have the same named variables
-
         self.solver = solver
         self.ts = TransSys(btorname, solver, prefix)
+        self.prefix = prefix
+        self.simulator = Symsimulator(self.ts) # Symsim will reuse the solver in ts
+        self.iv_term_dict = {} # initially an empty map
+
+    def __getattr__(self, signal_name):
+        return self.get_signal(signal_name)
+    
+    def get_signal(self, signal_name):
+        # self.prefix is prepended automatically
+        _ = self.ts.lookup(self.prefix + signal_name)  # a check 
+        return RefSignalProxy(self, self.prefix + signal_name)
+
+    def __copy__(self):
+        warn_log(1, "ref-design-uncopyable", "RefDesign will not be copied when forking coroutines")
+        # will not copy 
+        return self
+    def __deepycopy__(self,memo):
+        warn_log(1, "ref-design-uncopyable", "RefDesign will not be copied when forking coroutines")
+        # will not copy 
+        return self
+        
 
 
 class Dut:
@@ -378,7 +401,35 @@ class VarProxy:
     @value.setter
     def value(self, iv):
         raise RuntimeError(f"You cannot set value to '{self.name}'.")
-    
+
+class RefSignalProxy:
+    def __init__(self, dut, signal_name):
+        self.dut = dut  # signal_name Dut instance
+        self.name = signal_name
+
+    @property
+    def value(self):
+        nf = self.dut.simulator.var(self.name) # name to SMT term
+        iv_term_dict = self.dut.iv_term_dict
+        try:
+            signal_nr = self.dut.simulator.interpret_input_and_state_expr_on_curr_frame(nf, iv_term_dict, True)
+            return signal_nr
+        except Exception as e:
+            raise Exception("Signal: " + self.name + " contains unassigned variable. " + str(e))
+
+    @value.setter
+    def value(self, iv):
+        iv_term_dict = self.dut.iv_term_dict
+        try:
+            iv_nr = self.dut.simulator.var(self.name) # name to SMT term
+            if self.dut.ts.is_input_var(iv_nr):
+                iv_dict = self.dut.simulator.convert({self.name : iv})
+                iv_term_dict.update(iv_dict)
+            else:
+                raise ValueError(f"No such input variable '{self.name}'.")
+        except Exception as e:
+            raise ValueError(f"No such variable '{self.name}'.", e)
+
     
 
 class SignalProxy:

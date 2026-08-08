@@ -117,10 +117,11 @@ class SymbolicSimulator
 
   /// similar to cur(), but will check no reference to the input variables
   smt::Term interpret_state_expr_on_curr_frame(const smt::Term & expr) const;
-  smt::Term interpret_input_and_state_expr_on_curr_frame(const smt::Term & expr, const smt::UnorderedTermMap & iv_map) const;
   /// similar to cur(), but will check no reference to the input variables
   smt::TermVec interpret_state_expr_on_curr_frame(
       const smt::TermVec & expr) const;
+  /// if restricted = true, will check that there is no extra reference to inputvars outside iv_map
+  smt::Term interpret_input_and_state_expr_on_curr_frame(const smt::Term & expr, const smt::UnorderedTermMap & iv_map, bool sanity_check) const;
 
   /// do simulation
   void sim_one_step();
