@@ -129,16 +129,6 @@ find_package(glog CONFIG REQUIRED
   PATHS "${PROJECT_SOURCE_DIR}/deps/glog/install/lib/cmake/glog"
   NO_DEFAULT_PATH)
 
-# Generate the SMV parser using Flex/Bison
-BISON_TARGET(SMVParser ${PROJECT_SOURCE_DIR}/frontends/smvparser.y
-  ${CMAKE_CURRENT_BINARY_DIR}/smvparser.cpp
-  DEFINES_FILE ${CMAKE_CURRENT_BINARY_DIR}/smvparser.h)
-
-FLEX_TARGET(SMVScanner ${PROJECT_SOURCE_DIR}/frontends/smvparser.l
-  ${CMAKE_CURRENT_BINARY_DIR}/smvlexer.cpp)
-
-ADD_FLEX_BISON_DEPENDENCY(SMVScanner SMVParser)
-
 set(INCLUDE_DIRS
   "${CMAKE_CURRENT_BINARY_DIR}"
   "${PROJECT_SOURCE_DIR}"
