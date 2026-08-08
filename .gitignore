@@ -41,3 +41,7 @@ test/python/__pycache__/*
 
 output/
 
+# Coding Agent related
+agents/
+
+
