@@ -12,5 +12,6 @@ python3 "$script_dir/check_microrv.py" "$correct_btor" --expect clean
 for btor in "$bug_dir"/RiscV32Core-bug*.btor2; do
   echo "== Checking $(basename "$btor") (expected bug) =="
   python3 "$script_dir/check_microrv.py" "$btor" --expect bug
-  cp cex.vcd $(basename "$btor").vcd
+  mv dut_cex.vcd $(basename "$btor").vcd
+  mv refdesign_cex.vcd $(basename "$btor")_ref.vcd
 done

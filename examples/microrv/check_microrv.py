@@ -136,7 +136,7 @@ def run_check(design_btor2, bound):
     sim = pywasim.async_simulator(dut)
 
     ref_model = pywasim.RefDesign(str(REF_MODEL), dut.solver)
-    ref_model.simulator.free_init({})
+    ref_model.free_init()
 
     dut.set_init()
     check_one_instruction(sim, dut)
