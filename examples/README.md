@@ -23,3 +23,14 @@ python3 examples/microrv/check_microrv.py \
 
 `microrv/run_buggy_microrv_checks.sh` checks the original MicroRV design plus
 all ten generated buggy variants under `design/asynctest/buggy-microrv32`.
+
+## AES
+
+`aes/check_pipeline_vs_comb.py` compares the pipelined AES-128 BTOR2 design
+against the pure combinational AES encryption BTOR2 design through `RefDesign`.
+
+The full symbolic check is expected to be expensive:
+
+```bash
+python3 examples/aes/check_pipeline_vs_comb.py
+```

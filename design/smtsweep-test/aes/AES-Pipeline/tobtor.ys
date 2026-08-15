@@ -1,0 +1,15 @@
+read_verilog -formal aes_128.v
+read_verilog -formal expand_key_128.v
+read_verilog -formal one_round.v
+read_verilog -formal final_round.v
+read_verilog -formal table_lookup.v
+read_verilog -formal T.v
+read_verilog -formal S4.v
+read_verilog -formal S.v
+read_verilog -formal xS.v
+
+prep -top aes_128 -nomem
+flatten
+memory
+setundef -undriven -init -expose
+write_btor -s aes_128.btor2

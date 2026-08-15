@@ -1,0 +1,14 @@
+read_verilog -formal AES_Encrypt.v
+read_verilog -formal keyExpansion.v
+read_verilog -formal encryptRound.v
+read_verilog -formal addRoundKey.v
+read_verilog -formal subBytes.v
+read_verilog -formal shiftRows.v
+read_verilog -formal mixColumns.v
+read_verilog -formal sbox.v
+
+prep -top AES_Encrypt
+flatten
+memory -nomap
+setundef -undriven -init -expose
+write_btor -s AES_Encrypt.btor2
