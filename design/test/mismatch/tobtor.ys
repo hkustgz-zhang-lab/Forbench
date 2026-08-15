@@ -1,0 +1,17 @@
+read_verilog -formal add_plus_one_lat2.v
+prep -top add_plus_one_lat2
+write_btor -s add_plus_one_lat2.btor2
+
+design -reset
+
+read_verilog -formal add_lat1.v
+prep -top add_lat1
+write_btor -s add_lat1.btor2
+
+design -reset
+
+read_verilog -formal add_lat0.v
+prep -top add_lat0
+write_btor -s add_lat0.btor2
+
+
