@@ -367,6 +367,12 @@ class Dut:
         else:
             msg_log("check prop result: pass!")
         return not res  # unsat -> return True
+    def _get_all_asumpts_for_sweeper(self):
+        assert (self.curr_branch_idx is not None)
+        asmpts_all = self.simulator.all_assumptions(self.curr_branch_idx)
+        asmpts_all.extend(self.branch_list[self.curr_branch_idx].constraints)
+        return asmpts_all
+
 
     def check_sat(self, asst, asmpts):
         debug_log('<dut.check_sat>')
@@ -633,14 +639,19 @@ class async_simulator(object):
         assert (self._state_ptr)
         return self._state_ptr.branch_idx
 
-    def check_assertion(self, expr, asmpts = []):    # check_valid
+    def check_assertion(self, expr, asmpts = [], smt_sweep_enabled = False):    # check_valid
         assert (self._state_ptr)
         curr_branch_idx = self._state_ptr.branch_idx
         debug_log('<solver call>')
         # we can use this func to simplify the expr first
         # simplify_expr = self.dut.expr_simplify_ite(expr, self._state_ptr.branch_cond)
         # can_sat = self.dut.check_sat(~simplify_expr, self._state_ptr.branch_cond)
-        can_sat = self.dut.check_sat(~expr, asmpts)
+        query = ~expr
+        if smt_sweep_enabled:
+            all_internal_asmpt = self.dut._get_all_asumpts_for_sweeper()
+            all_internal_asmpt.extend(asmpts)
+            query = sweep_term(query, {}, all_internal_asmpt)
+        can_sat = self.dut.check_sat(query, asmpts)
         debug_log('<end solver call>')
         if can_sat:
             # the behavior here should be controllable

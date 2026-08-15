@@ -39,7 +39,8 @@ deps/*
 __pycache__/*
 test/python/__pycache__/*
 
-output/
+output/*
+tmp/*
 
 # Coding Agent related
 agents/

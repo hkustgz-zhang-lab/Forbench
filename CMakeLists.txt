@@ -161,6 +161,8 @@ set(SOURCES
     "${PROJECT_SOURCE_DIR}/utils/logger.cpp"
     "${PROJECT_SOURCE_DIR}/utils/str_util.cpp"
     "${PROJECT_SOURCE_DIR}/printer/vcd_witness_printer.cpp"
+    "${PROJECT_SOURCE_DIR}/sweeper/node_data.cpp"
+    "${PROJECT_SOURCE_DIR}/sweeper/sweeper_engine.cpp"
     "${PROJECT_SOURCE_DIR}/timed-assertion-checker/timed_assertion_checker.cpp"
 )
 

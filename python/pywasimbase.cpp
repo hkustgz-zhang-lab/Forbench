@@ -8,6 +8,7 @@
 #include "framework/symsim.h"
 #include "framework/symsim_branch.h"
 #include "framework/state_simplify.h"
+#include "sweeper/sweeper_engine.hpp"
 
 // CHECK url: 
 //   https://cs.brown.edu/~jwicks/boost/libs/python/doc/tutorial/doc/html/python/object.html
@@ -540,6 +541,7 @@ namespace wasim {
     friend struct Symsimulator;
     friend struct Symsimbranch;
     friend NodeRef* expr_simplify_ite_wrap(const NodeRef*, const boost::python::list&, const SolverRef*);
+    friend NodeRef* sweep_term_wrap(NodeRef*, const boost::python::dict&, const boost::python::list&);
     
     smt::SmtSolver solver;
     smt::Term node;
@@ -1232,6 +1234,58 @@ namespace wasim {
       throw PyWASIMException(PyExc_TypeError, e.what());
     }
     return NULL;
+  }
+
+  template <typename T>
+  T get_option_or_default(const boost::python::dict & options,
+                          const char * key,
+                          const T & default_value)
+  {
+    if (!options.has_key(key))
+      return default_value;
+    return boost::python::extract<T>(options[key]);
+  }
+
+  NodeRef* sweep_term_wrap(NodeRef * root,
+                           const boost::python::dict & options,
+                           const boost::python::list & constraints)
+  {
+    if (root == nullptr)
+      throw PyWASIMException(PyExc_RuntimeError, "sweep_term expects a NodeRef");
+
+    sweeper::Config config;
+    config.simulation_iterations =
+      get_option_or_default<int>(options, "iterations", 16);
+    config.find_unsat =
+      get_option_or_default<int>(options, "find_unsat", 500);
+    config.find_sat =
+      get_option_or_default<int>(options, "find_sat", 200);
+    config.solver_timeout_ms =
+      get_option_or_default<int>(options, "solver_timeout_ms", 3600000);
+    config.debug =
+      get_option_or_default<bool>(options, "debug", false);
+    config.dump_input_file =
+      get_option_or_default<std::string>(options, "dump_input_file", "");
+    config.load_input_file =
+      get_option_or_default<std::string>(options, "load_input_file", "");
+
+    if (config.simulation_iterations <= 0)
+      throw PyWASIMException(PyExc_ValueError, "SMT-sweep iterations must be positive");
+
+    sweeper::SweeperOptions sweep_options;
+    sweep_options.find_unsat = config.find_unsat;
+    sweep_options.find_sat = config.find_sat;
+
+    smt::Term swept = root->node;
+    smt::TermVec constraint_terms;
+    for (ssize_t i = 0; i < len(constraints); ++i) {
+      boost::python::extract<NodeRef *> item(constraints[i]);
+      if (!item.check())
+        throw PyWASIMException(PyExc_RuntimeError, "Expecting NodeRef list in sweep_term constraints");
+      constraint_terms.push_back(item()->node);
+    }
+    sweeper::sweeper(swept, root->solver, config, sweep_options, constraint_terms);
+    return new NodeRef(swept, root->solver);
   }
 
   /* TransSys : ts */
@@ -2179,6 +2233,9 @@ BOOST_PYTHON_MODULE(pywasimbase)
           return_value_policy<manage_new_object>());
   // ite.
   def("ite", &NodeRef::ITE_operator,
+          return_value_policy<manage_new_object>());
+
+  def("sweep_term", &sweep_term_wrap,
           return_value_policy<manage_new_object>());
 
 

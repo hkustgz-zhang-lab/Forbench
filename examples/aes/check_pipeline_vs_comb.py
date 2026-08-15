@@ -28,7 +28,7 @@ def compare_one_symbolic_block(sim, dut):
     sim.wait_cycle(PIPELINE_LATENCY)
 
     print("-- cycle:", sim.current_cycle(), "checking pipeline output")
-    sim.check_assertion(dut.out.value == expected_ciphertext)
+    sim.check_assertion(dut.out.value == expected_ciphertext, smt_sweep_enabled=True)
 
 
 dut = pywasim.Dut(str(PIPELINE_DUT))
