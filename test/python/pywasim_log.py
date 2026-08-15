@@ -41,7 +41,7 @@ def warn_signal_contains_current_input(signal_name):
         1,
         f"signal-contains-current-input:{signal_name}",
         f"expr(dut.{signal_name}.value) contains current inputvars; "
-        f"modifying related inputvars afterward may cause dut.{signal_name}.value to change."
+        f"modifying related inputvars afterward is not reflected on older expr."
     )
 
 
