@@ -161,13 +161,19 @@ void SymbolicSimulator::dump_waveform(const std::string &fname, const smt::Unord
         const auto & term_ = str_term.second;
         if (ts_.is_next_var(term_)) continue;
         if (vmap.find(term_) != vmap.end()) continue;
-        // else
-        auto term_value = solver_->get_value(term_);
+        // for the named_terms, we should check the trace_ to how its values are mapped...
+        auto term_value = solver_->AbsSmtSolver::substitute(term_, vmap);
+        smt::UnorderedTermSet remaining_var;
+        smt::get_free_symbols(term_value, remaining_var);
+        assert(remaining_var.empty());
 
-        if (!term_value->is_value())
-           std::cout << term_->to_raw_string() << " : " << term_value->to_raw_string() << std::endl;
-        assert(term_value->is_value()); // should be value after substitution
-        vmap.emplace(term_, term_value);
+        auto final_term_value = solver_->get_value(term_value);
+        // auto term_value = solver_->get_value(term_); // replacement_and_constant_propagation(term_, vmap, solver_);
+        // auto term_value = solver_->substitute(term_, vmap);
+        //if (!term_value->is_value())
+        // std::cout << str_term.first << " @" << t << " : " << final_term_value->to_raw_string() << std::endl;
+        assert(final_term_value->is_value()); // should be value after substitution
+        vmap.emplace(term_, final_term_value);
       }
     }
   }
@@ -430,7 +436,11 @@ smt::Term SymbolicSimulator::new_var(smt::Sort sort,
                                     const std::string & vname /*"=var"*/,
                                     bool x /*=true*/)
 {
-  std::string n = x ? vname + "X" : vname;
+  std::string peel_vname = vname;
+  if (vname.length() > 2 && vname.front() == '|' && vname.back() == '|') 
+    peel_vname = vname.substr(1, vname.length()-2); // remove ||
+
+  std::string n = x ? peel_vname + "X" : peel_vname;
   smt::Term symb = free_make_symbol(n, sort, name_cnt_, solver_);
 
   if (x) Xvar_.insert(symb);

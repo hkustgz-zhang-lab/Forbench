@@ -1479,6 +1479,10 @@ namespace wasim {
       return ret;
     }
 
+    bool is_Xvar(NodeRef * t) {
+      return sptr->is_Xvar(t->node);
+    }
+
     /// a shortcut to create symbolic variables/concrete values in a map
     boost::python::dict convert(const boost::python::dict & d) const {
       assignment_type vdict;
@@ -2243,6 +2247,7 @@ BOOST_PYTHON_MODULE(pywasimbase)
     .def("print_current_step_assumptions", &Symsimulator::print_current_step_assumptions)
     .def("create_input_Xvars", &Symsimulator::create_input_Xvars)
     .def("convert", &Symsimulator::convert)
+    .def("is_Xvar", &Symsimulator::is_Xvar)
     .def("backtrack", &Symsimulator::backtrack)
     .def("init", &Symsimulator::init)
     .def("free_init", &Symsimulator::free_init)

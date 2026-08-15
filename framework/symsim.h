@@ -128,6 +128,7 @@ class SymbolicSimulator
 
   /// get the set of all X variables
   const smt::UnorderedTermSet & get_Xs() const { return Xvar_; }
+  bool is_Xvar(const smt::Term & t) const { return (Xvar_.find(t) != Xvar_.end()); }
 
   /// get (a copy of) the current state
   StateAsmpt get_curr_state(const smt::TermVec & assumptions = {});

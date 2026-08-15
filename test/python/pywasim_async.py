@@ -19,8 +19,8 @@ from pywasim_log import debug_log, warn_log, msg_log, warn_signal_contains_curre
 _all_coroutine = [] # List of `pywasim_coroutine`
 _all_states = []
 _all_functions = {} # a name:str->ast map (so you don't need to re-parse functions)
+_all_refdesigns = {} # str -> refdesign ref
 # HZ: I don't like the use of these global vars...
-# cur_branch_idx = 0  # current running branch, init 0 / every state has a branch_idx
 
 
 class PywasimAssertionFailure(Exception):
@@ -100,7 +100,7 @@ class RefDesign:
     # the usage of RefDesign is that you set input and get the related signals
     # We explicited require assigning all inputs for the reference (no implicit X)
 
-    def __init__(self, btorname, solver, prefix = "SPEC::"):
+    def __init__(self, btorname, solver, prefix = "SPEC::", refdesign_name:str = "refdesign"):
         # btorname: path to the btor2 file
         # solver: you should use the same solver as the Dut
         # prefix: a prefix to the variable names in the RefDesign
@@ -111,14 +111,66 @@ class RefDesign:
         self.prefix = prefix
         self.simulator = Symsimulator(self.ts) # Symsim will reuse the solver in ts
         self.iv_term_dict = {} # initially an empty map
+        self.initialized = False
+        self.refdesign_name = refdesign_name
 
-    def __getattr__(self, signal_name):
-        return self.get_signal(signal_name)
+        if refdesign_name in _all_refdesigns:
+            raise RuntimeError(f'{refdesign_name} has been used, please use another name')
+        _all_refdesigns[refdesign_name] = self
+
+    def set_init(self, d = {}):
+        if self.initialized:
+            raise RuntimeError("You cannot initialize RefDesign twice")
+        self.initialized = True
+        var_dict = self.simulator.convert(d)
+        self.simulator.init(var_dict)
+
+    def free_init(self, d = {}):
+        if self.initialized:
+            raise RuntimeError("You cannot initialize RefDesign twice")
+        self.initialized = True
+        var_dict = self.simulator.convert(d)
+        self.simulator.free_init(var_dict)
+
+    def step(self, num_cycle = 1, asmpt = []):
+        # Currently, it is not recommended to have num_cycle > 1
+        # because there is no default value. You don't have a chance 
+        # to set the input value.
+        for _ in range(num_cycle):
+            self.simulator.set_input(self.iv_term_dict, asmpt)
+            self.simulator.sim_one_step()
+            self.iv_term_dict = {}
+
+    def dump_waveform(self, fname_override:str = '') :
+        fname = fname_override if fname_override else self.refdesign_name + "_cex.vcd"
+        empty_iv_dict = self.simulator.create_input_Xvars("")
+        dump_iv = self._merge_dict_replace_X(empty_iv_dict, self.iv_term_dict)
+        print(dump_iv)
+        self.simulator.dump_waveform(fname, dump_iv, True)
+    
+    def _merge_dict_replace_X(self, iv_term_dict, iv_term_dict_default):
+        # check every k,v in iv_term_dict_default, if the corresponding value in iv_term_dict is X then replace it
+        # else don't replace
+        retd = iv_term_dict.copy()
+        for k,v in iv_term_dict_default.items():
+            if k in retd:
+                old_v = retd[k]
+                if self.simulator.is_Xvar(old_v):
+                    retd[k] = v
+            else:
+                retd[k] = v
+        return retd
     
     def get_signal(self, signal_name):
+        if not self.initialized:
+            raise RuntimeError("You must initialize RefDesign first before get_signal!")
+
         # self.prefix is prepended automatically
         _ = self.ts.lookup(self.prefix + signal_name)  # a check 
         return RefSignalProxy(self, self.prefix + signal_name)
+
+    def __getattr__(self, signal_name):
+        return self.get_signal(signal_name)
 
     def __copy__(self):
         warn_log(1, "ref-design-uncopyable", "RefDesign will not be copied when forking coroutines")
@@ -133,10 +185,11 @@ class RefDesign:
 
 class Dut:
     # DUT now is having multiple branches
-    def __init__(self, btorname):
+    def __init__(self, btorname, dut_name: str = "dut"):
         self.ts = TransSys(btorname) # this is the C++ class
         self.simulator = Symsimbranch(self.ts) # this is the C++ class
         self.solver = self.simulator.get_solver()
+        self.dut_name = dut_name
         
         self._do_not_interpret_var = False # if true, will return VarProxy. If false return SignalProxy
         self.inputvars_list = self.ts.inputvars()
@@ -595,7 +648,13 @@ class async_simulator(object):
             # maybe dump waveform
             debug_log(f"<Error branch: {curr_branch_idx}>")
             iv_term_dict = self.dut.branch_list[curr_branch_idx].iv_term_dict
-            self.dut.simulator.dump_waveform("cex.vcd", iv_term_dict, True, curr_branch_idx)
+            waveform_fn = self.dut.dut_name + "_cex.vcd"
+            self.dut.simulator.dump_waveform(waveform_fn, iv_term_dict, True, curr_branch_idx)
+
+            # dump waveform of all refdesigns
+            for refd in _all_refdesigns.values():
+                refd.dump_waveform()
+
             raise PywasimAssertionFailure(expr=expr, asmpts=asmpts, branch_idx=curr_branch_idx)
             msg_log("sim.check_assertion failed")
             return False

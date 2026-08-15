@@ -160,7 +160,7 @@ class SymbolicSimulatorBranch
 
   /// get the set of all X variables
   const smt::UnorderedTermSet & get_Xs() const { return Xvar_; }  // ok, no used in pywasim
-  bool is_Xvar(const smt::Term & t) { return (Xvar_.find(t) != Xvar_.end()); }
+  bool is_Xvar(const smt::Term & t) const { return (Xvar_.find(t) != Xvar_.end()); }
 
   /// get (a copy of) the current state
   StateAsmpt get_curr_state(const smt::TermVec & assumptions = {}, size_t branch_idx = 0);  // branch, Not supported yet
