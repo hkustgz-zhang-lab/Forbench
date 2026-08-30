@@ -112,6 +112,7 @@ namespace wasim {
     NodeType * make_bool();
     NodeType * make_bvsort(u_int64_t width);
     NodeRef * make_constant(boost::python::object c, NodeType * ntype) ;
+    NodeRef * new_var(boost::python::object c, NodeType * ntype);
 
     protected:
       friend class TransSys; // TransSys can use the same solver to build multiple transys
@@ -1235,6 +1236,15 @@ namespace wasim {
     }
     return NULL;
   }
+  NodeRef * SolverRef::new_var(boost::python::object c, NodeType * ntype) {
+    auto s = pystr_to_string(c);
+    try{
+      return new NodeRef(solver->make_symbol(s, ntype->sort),  solver);
+    } catch(SmtException e) {
+      throw PyWASIMException(PyExc_TypeError, e.what());
+    }
+    return NULL;
+  }
 
   template <typename T>
   T get_option_or_default(const boost::python::dict & options,
@@ -2262,6 +2272,7 @@ BOOST_PYTHON_MODULE(pywasimbase)
     .def("make_bool", &SolverRef::make_bool, return_value_policy<manage_new_object>())
     .def("make_bvsort", &SolverRef::make_bvsort, return_value_policy<manage_new_object>())
     .def("make_constant", &SolverRef::make_constant, return_value_policy<manage_new_object>())
+    .def("new_var", &SolverRef::new_var, return_value_policy<manage_new_object>())    
   ;
 
   class_<TransSys>("TransSys", init<const std::string &>())

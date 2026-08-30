@@ -14,13 +14,20 @@ sys.path.append(build_dir)
 from pywasimbase import *
 # TransSys, Simsimulator
 
-from pywasim_log import debug_log, warn_log, msg_log, warn_signal_contains_current_input
+from pywasim_log import enable_debug, disable_debug, debug_log, warn_log, msg_log, warn_signal_contains_current_input
 
 _all_coroutine = [] # List of `pywasim_coroutine`
 _all_states = []
 _all_functions = {} # a name:str->ast map (so you don't need to re-parse functions)
 _all_refdesigns = {} # str -> refdesign ref
 # HZ: I don't like the use of these global vars...
+
+_state_id_cnt = 0
+def _new_state_id():
+    global _state_id_cnt
+    ret = _state_id_cnt
+    _state_id_cnt += 1
+    return ret
 
 
 class PywasimAssertionFailure(Exception):
@@ -378,9 +385,15 @@ class Dut:
         debug_log('<dut.check_sat>')
         assert (self.curr_branch_idx is not None)
         asmpts_all = self.simulator.all_assumptions(self.curr_branch_idx)
+        # print(asmpts_all)
         asmpts_all.extend(asmpts)
         asmpts_all.extend(self.branch_list[self.curr_branch_idx].constraints)
         asmpts_all.append(asst)
+        # print ('br:',self.curr_branch_idx)
+        # print ('------begin---------')
+        # for ac in asmpts_all:
+        #     print(ac)
+        # print ('------end---------')
         # print ('asmpts_all: #', len(asmpts_all))
         return self.solver.check_sat_assuming(asmpts_all)
     
@@ -603,6 +616,11 @@ class async_simulator(object):
     def get_var(self, name):
         """This is typically used to get a symbolic variable, that was previously provided as a string"""
         return self.dut.simulator.get_var(name)
+    def new_bool_var(self, name):
+        return self.dut.simulator.set_var(0, name)
+    def new_bv_var(self, name, width:int):
+        assert(width>0)
+        return self.dut.simulator.set_var(width, name)
     
     def assume(self, cond, check_possible = False) -> WhenObject:
         """cond could be NodeRef or string (future work). Returns a when object"""
@@ -727,6 +745,8 @@ class await_condition(object):
         self.cycle = cycle
         self.cond = cond
         self.execthread = execthread
+    def clone(self):
+        return await_condition(cycle=self.cycle, cond = self.cond, execthread=self.execthread)
     # you will need to test if this is ready
 
 class stackframe(object):
@@ -807,12 +827,28 @@ class stackframe(object):
                 for vname,val in self.localvars.items():
                     if isinstance(val, Dut) or isinstance(val, async_simulator) or isinstance(val, types.ModuleType):
                         result.localvars[vname] = val # do not copy these
-                    elif isinstance(val, float) or isinstance(val, int) or isinstance(val, str):
+                    elif isinstance(val, float) or isinstance(val, int) or isinstance(val, str) or val is None:
                         result.localvars[vname] = val # no need to copy
+                    elif isinstance(val, NodeRef):
+                        result.localvars[vname] = val # no need to copy # because not mutable
+                    elif isinstance(val, list):
+                        result.localvars[vname] = val[:]
+                        warn_log(
+                            3,
+                            f"shallow-copied-local-variable:{vname}",
+                            f"local variable {vname} is only shallow copied when forking coroutine:",
+                            val
+                        )
                     elif hasattr(val,"__deepcopy__"):
                         result.localvars[vname] = copy.deepcopy(val)
                     elif hasattr(val,"__copy__"):
                         result.localvars[vname] = copy.copy(val)
+                        warn_log(
+                            3,
+                            f"shallow-copied-local-variable:{vname}",
+                            f"local variable {vname} is only shallow copied when forking coroutine:",
+                            val
+                        )
                     else:
                         warn_log(
                             3,
@@ -898,7 +934,8 @@ def eval_args(callast:ast.Call, localvars, globalvars): # return args and kwargs
 
 
 class pywasim_local_state(object):
-    def __init__(self, coroutine, initial_stackframe:stackframe):
+    def __init__(self, coroutine, state_id,  initial_stackframe:stackframe):
+        self.state_id = state_id
         self.coroutine = coroutine
         self.current_frame: stackframe = initial_stackframe
         self.stack = [] # list of (targetList : list or None, stackframe)
@@ -914,7 +951,7 @@ class pywasim_local_state(object):
         
     def clone(self, branch_idx): # it returns a passthrough object
         # this does not copy the associated branch, you must copy separately and associate them with the arg
-        ret = pywasim_local_state(self.coroutine, self.current_frame) # you don't need to clone args and kwargs because it will not branch at invocation
+        ret = pywasim_local_state(self.coroutine, _new_state_id(), self.current_frame) # you don't need to clone args and kwargs because it will not branch at invocation
         # HZ: when you copy the stack frame, you need to be careful !!!
         #     this is because in the old frame/stack, there are localvars stored by references
         #     you need to make sure, they are still kept by references
@@ -962,8 +999,11 @@ class pywasim_local_state(object):
             retval = self._eval_expr(stmt.value)
 
         # pop until you meet a `func`,  (you can return in a possibly nested if/loop etc.)
-        while len(self.stack) > 0 and self.stack[-1][1].func_or_block == 'block':
-            del self.stack[-1]
+        if self.current_frame.func_or_block == 'block':
+            while len(self.stack) > 0 and self.stack[-1][1].func_or_block == 'block':
+                #print (self.stack[-1][1].func_or_block)
+                del self.stack[-1]
+        # else: the current_frame is a func
 
         if len(self.stack):
             # pop the stack
@@ -972,6 +1012,7 @@ class pywasim_local_state(object):
                 self._bind_for_target(targets, retval) # assign the return value
             del self.stack[-1]
             self.current_frame.pc += 1 # return to the next stmt
+            debug_log(f"<func return pc:{self.current_frame.pc}, stack size: {len(self.stack)}>")
         else:
             self.retval = retval
             debug_log ('<stack length = 0>')
@@ -1017,6 +1058,7 @@ class pywasim_local_state(object):
         func_def, call_ast, targets, callee_source = self._detect_function_trace(stmt)
         if func_def is not None: # this means we need to trace assert (func_def is not None)
             # follow into the function call
+            debug_log('trace into function: '+func_def.name)
             self.stack.append((targets, self.current_frame)) # does not change pc here, will return to pc+1
             args,kwargs = eval_args(call_ast, self.current_frame.localvars, self.sim.globalvars)
             # EVAL val
@@ -1150,7 +1192,12 @@ class pywasim_local_state(object):
             # copy other states as well
             for st in other_state_to_fork:
                 passthrough_other = st.clone(branch_idx = br_idx)
+                if st.await_cond is not None:  # you must keep the same condition
+                    passthrough_other.await_cond = st.await_cond.clone()
                 _all_states.append(passthrough_other)
+                old_state_id = st.state_id
+                new_state_id = passthrough_other.state_id
+                debug_log(f'state {old_state_id} copied to {new_state_id}')
 
         return pushed_stack
 
@@ -1201,7 +1248,12 @@ class pywasim_local_state(object):
             # copy other states as well
             for st in other_state_to_fork:
                 passthrough_other = st.clone(branch_idx = br_idx)
+                if st.await_cond is not None:  # you must keep the same condition
+                    passthrough_other.await_cond = st.await_cond.clone()
                 _all_states.append(passthrough_other)
+                old_state_id = st.state_id
+                new_state_id = passthrough_other.state_id
+                debug_log(f'state {old_state_id} copied to {new_state_id}')
         return pushed_stack
         
 
@@ -1518,6 +1570,7 @@ class pywasim_coroutine(object):
         _all_states.append( \
             pywasim_local_state(  \
                 coroutine = self,  \
+                state_id=_new_state_id(), \
                 initial_stackframe = \
                     stackframe(localvars={}, func_def=self.astnodes.body[0],code=self.funbody, args=args, kwargs=kwargs,
                                source_file=self.source_file, source_start_lineno=self.source_start_lineno,
@@ -1674,7 +1727,12 @@ def async_one_step(sim, dut):
                 _all_states.append(passthrough)
                 for st2 in other_state_to_fork:
                     other_passthrough = st2.clone(branch_idx = br_idx)
+                    if st2.await_cond is not None:  # you must keep the same condition
+                        other_passthrough.await_cond = st2.await_cond.clone()
                     _all_states.append(other_passthrough)
+                    old_state_id = st2.state_id
+                    new_state_id = other_passthrough.state_id
+                    debug_log(f'state {old_state_id} copied to {new_state_id}')
 
 
                 
