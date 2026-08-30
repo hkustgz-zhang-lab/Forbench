@@ -34,3 +34,38 @@ The full symbolic check is expected to be expensive:
 ```bash
 python3 examples/aes/check_pipeline_vs_comb.py
 ```
+
+## Pair Swapper
+
+The pair-swapper examples check a streaming byte transform:
+
+```text
+input:  d0 d1 d2 d3
+output: d1 d0 d3 d2
+```
+
+`pair_swapper/check_pair_swapper.py` is the randomized-send symbolic testbench.
+It uses two overlapping async coroutines: one coroutine decides symbolically
+whether to send on each cycle until all requests are sent, and the other waits
+for valid outputs and checks the swapped order.
+
+```bash
+python3 examples/pair_swapper/check_pair_swapper.py
+```
+
+`pair_swapper/check_pair_swapper_simple.py` is the deterministic-send version.
+It sends `N` symbolic bytes in consecutive cycles, with no random or symbolic
+choice about whether to send, then checks the same swapped output order.
+
+```bash
+python3 examples/pair_swapper/check_pair_swapper_simple.py
+```
+
+`pair_swapper/check_pair_swapper_monitor.py` is the passive monitor-style
+testbench. It does not explicitly drive `in_valid` or `in_data`; it observes the
+symbolic input stream and checks outputs against branch-local Python reference
+state.
+
+```bash
+python3 examples/pair_swapper/check_pair_swapper_monitor.py
+```

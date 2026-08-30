@@ -1,0 +1,8 @@
+read_verilog -formal pair_swapper.v
+prep -top pair_swapper
+flatten
+memory -nomap
+hierarchy -check
+sim -clock clk -reset reset -rstlen 1 -n 1 -w pair_swapper
+setundef -undriven -init -expose
+write_btor -s pair_swapper.btor2
