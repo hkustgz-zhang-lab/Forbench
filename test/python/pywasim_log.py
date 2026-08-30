@@ -7,6 +7,13 @@ _disabled_warning = set()
 _disable_warnings_below_this_level = 0
 _warning_record = {}
 
+def enable_debug():
+    global _debug
+    _debug = True
+
+def disable_debug():
+    global _debug
+    _debug = False
 
 def debug_log(*args, **kwargs):
     if _debug:
