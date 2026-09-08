@@ -2,7 +2,7 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 DEPS=$DIR/../deps
-SMT_SWITCH_VERSION=2133053735db6037d49f04a8adabba758a568eba
+SMT_SWITCH_VERSION=79cf655a0eefd678f166e25ac69ae73b2492a4d1
 
 usage () {
     cat <<EOF
@@ -56,7 +56,7 @@ fi
 
 if [ ! -d "$DEPS/smt-switch" ]; then
     cd $DEPS
-    git clone https://github.com/yangziyiiii/smt-switch.git
+    git clone https://github.com/zhanghongce/smt-switch.git
     cd smt-switch
     git checkout -f $SMT_SWITCH_VERSION
     ./contrib/setup-bitwuzla.sh

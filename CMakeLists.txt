@@ -91,7 +91,9 @@ set(SMT_SWITCH_DIR "${PROJECT_SOURCE_DIR}/deps/smt-switch")
 # rely on cmake modules from smt-switch (required anyway)
 set(CMAKE_MODULE_PATH ${SMT_SWITCH_DIR}/cmake)
 
-find_package(GMP REQUIRED)
+find_package(GMP REQUIRED COMPONENTS gmpxx)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(MPFR REQUIRED mpfr>=4.2.1)
 
 # Check that dependencies are there
 if (NOT EXISTS "${SMT_SWITCH_DIR}/local/include/smt-switch/smt.h")
@@ -140,7 +142,8 @@ set(INCLUDE_DIRS
   "${PROJECT_SOURCE_DIR}/deps/vexpparser/src"
   "${PROJECT_SOURCE_DIR}/deps/vexpparser/build/src"
   "${SMT_SWITCH_DIR}/local/include"
-  "${GMP_INCLUDE_DIR}"
+  "${GMP_INCLUDE_DIRS}"
+  "${MPFR_INCLUDE_DIRS}"
   "${FLEX_INCLUDE_DIRS}"
   "${Boost_INCLUDE_DIRS}"
   )
@@ -166,6 +169,7 @@ set(SOURCES
     "${PROJECT_SOURCE_DIR}/timed-assertion-checker/timed_assertion_checker.cpp"
 )
 
+link_directories(${MPFR_LIBRARY_DIRS})
 
 
 
@@ -185,8 +189,8 @@ target_link_libraries(wasim-lib PUBLIC ${BITWUZLA_SAT_LIBRARIES})
 target_link_libraries(wasim-lib PUBLIC "${SMT_SWITCH_DIR}/local/lib/libsmt-switch.a")
 target_link_libraries(wasim-lib PUBLIC "${PROJECT_SOURCE_DIR}/deps/btor2tools/build/lib/libbtor2parser.a")
 target_link_libraries(wasim-lib PUBLIC "${PROJECT_SOURCE_DIR}/deps/vexpparser/build/src/libvexpparser.a")
-target_link_libraries(wasim-lib PUBLIC "${GMPXX_LIBRARIES}")
-target_link_libraries(wasim-lib PUBLIC "${GMP_LIBRARIES}")
+target_link_libraries(wasim-lib PUBLIC GMP::gmpxx)
+target_link_libraries(wasim-lib PUBLIC ${MPFR_LIBRARIES})
 target_link_libraries(wasim-lib PUBLIC pthread)
 target_link_libraries(wasim-lib PUBLIC Boost::system)
 # if (LIBRT)
