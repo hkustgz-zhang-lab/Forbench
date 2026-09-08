@@ -10,9 +10,15 @@ on:
 
 jobs:
   full-source-build:
-    name: Full source build with cached dependencies
-    runs-on: ubuntu-22.04
+    name: Full source build (${{ matrix.ubuntu }})
+    runs-on: ${{ matrix.ubuntu }}
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        ubuntu:
+          - ubuntu-22.04
+          - ubuntu-24.04
 
     steps:
       - name: Check out repository
@@ -31,6 +37,7 @@ jobs:
             libfl-dev \
             libboost-all-dev \
             libgmp-dev \
+            libmpfr-dev \
             m4 \
             perl \
             pkg-config \
@@ -38,6 +45,47 @@ jobs:
             python3-pip
           python3 -m pip install --upgrade pip
           python3 -m pip install meson ninja toml
+
+      - name: Ensure Bitwuzla math dependencies
+        env:
+          MATH_PREFIX: ${{ runner.temp }}/smt-switch-math
+        run: |
+          set -euxo pipefail
+          mkdir -p "$MATH_PREFIX"
+          export PKG_CONFIG_PATH="$MATH_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+
+          if ! pkg-config --atleast-version=6.3 gmp; then
+            curl --fail --location --retry 3 \
+              --output "$RUNNER_TEMP/gmp-6.3.0.tar.xz" \
+              https://gmplib.org/download/gmp/gmp-6.3.0.tar.xz
+            tar -xf "$RUNNER_TEMP/gmp-6.3.0.tar.xz" -C "$RUNNER_TEMP"
+            cd "$RUNNER_TEMP/gmp-6.3.0"
+            ./configure --prefix="$MATH_PREFIX" --enable-cxx
+            make -j"$(nproc)"
+            make install
+          fi
+
+          gmp_prefix=$(pkg-config --variable=prefix gmp)
+          if ! pkg-config --atleast-version=4.2.1 mpfr; then
+            curl --fail --location --retry 3 \
+              --output "$RUNNER_TEMP/mpfr-4.2.1.tar.xz" \
+              https://www.mpfr.org/mpfr-4.2.1/mpfr-4.2.1.tar.xz
+            tar -xf "$RUNNER_TEMP/mpfr-4.2.1.tar.xz" -C "$RUNNER_TEMP"
+            cd "$RUNNER_TEMP/mpfr-4.2.1"
+            ./configure --prefix="$MATH_PREFIX" --with-gmp="$gmp_prefix"
+            make -j"$(nproc)"
+            make install
+          fi
+
+          pkg-config --atleast-version=6.3 gmp
+          pkg-config --atleast-version=4.2.1 mpfr
+          pkg-config --modversion gmp
+          pkg-config --modversion mpfr
+          {
+            echo "PKG_CONFIG_PATH=$MATH_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+            echo "CMAKE_PREFIX_PATH=$MATH_PREFIX${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+            echo "LD_LIBRARY_PATH=$MATH_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          } >> "$GITHUB_ENV"
 
       - name: Restore dependency cache
         id: cache-deps
@@ -50,9 +98,9 @@ jobs:
             deps/btor2tools
             deps/smt-switch
             deps/vexpparser
-          key: ${{ runner.os }}-deps-${{ hashFiles('contrib/setup-*.sh', 'CMakeLists.txt') }}
+          key: ${{ runner.os }}-${{ matrix.ubuntu }}-deps-gmp-6.3.0-mpfr-4.2.1-${{ hashFiles('contrib/setup-*.sh', 'CMakeLists.txt') }}
           restore-keys: |
-            ${{ runner.os }}-deps-
+            ${{ runner.os }}-${{ matrix.ubuntu }}-deps-gmp-6.3.0-mpfr-4.2.1-
 
       - name: Build missing dependencies
         env:
