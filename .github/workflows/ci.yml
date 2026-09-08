@@ -46,6 +46,19 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install meson ninja toml
 
+      - name: Diagnose GMP download connectivity
+        run: |
+          set -u
+          echo "Runner: ${RUNNER_OS:-unknown} ${ImageOS:-unknown}"
+          echo "DNS records for gmplib.org:"
+          getent ahosts gmplib.org || true
+          echo "IPv4 connectivity to gmplib.org:"
+          curl -4 --head --location --connect-timeout 10 \
+            https://gmplib.org/download/gmp/gmp-6.3.0.tar.xz || true
+          echo "IPv6 connectivity to gmplib.org:"
+          curl -6 --head --location --connect-timeout 10 \
+            https://gmplib.org/download/gmp/gmp-6.3.0.tar.xz || true
+
       - name: Ensure Bitwuzla math dependencies
         env:
           MATH_PREFIX: ${{ runner.temp }}/smt-switch-math
@@ -57,7 +70,7 @@ jobs:
           if ! pkg-config --atleast-version=6.3 gmp; then
             curl --fail --location --retry 3 \
               --output "$RUNNER_TEMP/gmp-6.3.0.tar.xz" \
-              https://gmplib.org/download/gmp/gmp-6.3.0.tar.xz
+              https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz
             tar -xf "$RUNNER_TEMP/gmp-6.3.0.tar.xz" -C "$RUNNER_TEMP"
             cd "$RUNNER_TEMP/gmp-6.3.0"
             ./configure --prefix="$MATH_PREFIX" --enable-cxx
