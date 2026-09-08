@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <array>
 #include <gmp.h>
 #include <iostream>
 #include "gmpxx.h"
