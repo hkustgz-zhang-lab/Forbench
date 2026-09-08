@@ -1,5 +1,7 @@
 # Forbench: Symbolic Simulation Helps Make Your Testbench More Formal
 
+[![CI](https://github.com/hkustgz-zhang-lab/Forbench/actions/workflows/ci.yml/badge.svg)](https://github.com/hkustgz-zhang-lab/Forbench/actions/workflows/ci.yml)
+
 Forbench is a symbolic simulation framework for Python-style formal testbenches. It makes hardware testbenches more formal by preserving the familiar procedural, stimulus-driven workflow of RTL simulation while representing signals and state transitions symbolically and using an SMT solver to check constraints and assertions.
 
 The framework operates on hardware designs represented as transition systems. A testbench can assign either concrete or symbolic values to DUT inputs, advance the design cycle by cycle, constrain the explored behaviors, and prove assertions over the resulting symbolic states.
