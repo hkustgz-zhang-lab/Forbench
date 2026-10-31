@@ -1100,13 +1100,14 @@ void TimedAssertionChecker::assert_formula(){
 }
 
 void TimedAssertionChecker::check_sat(){
-    std::cout << "term check sat result : " << solver_ -> check_sat() << std::endl;
+    smt::Result res = solver_ -> check_sat();
+    std::cout << "term check sat result : " << res << std::endl;
     std::cout << "---------------------------------------------------------" << std::endl;
-    if( (solver_ -> check_sat()).result == smt::SAT )
+    if( res.result == smt::SAT )
     {
       std::cout << "X |"<< " assert(" + verilog_assertion_ + ") | the equation isn't always correct and has counter-example" << std::endl;
     }
-    else if((solver_ -> check_sat()).result == smt::UNSAT )
+    else if(res.result == smt::UNSAT )
     {
       std::cout << "√ |" << " assert(" + verilog_assertion_ + ") | the equation is always correct" << std::endl;
     }
