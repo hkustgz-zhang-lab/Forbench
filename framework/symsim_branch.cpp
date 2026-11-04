@@ -1,5 +1,6 @@
 #include "symsim_branch.h"
 
+#include "smt-switch/substitution_walker.h"
 #include "smt-switch/utils.h"
 #include "printer/vcd_witness_printer.h"
 #include "framework/state_simplify.h"
@@ -28,29 +29,31 @@ unsigned SymbolicSimulatorBranch::tracelen(size_t idx) const {
 
 void SymbolicSimulatorBranch::add_assumption_interpreted(size_t branch_idx, const smt::Term & asmpt, const std::string & interp) {
   auto & br = symsim_branches[branch_idx];
-  br.history_assumptions_.back().push_back(asmpt);
-  br.history_assumptions_interp_.back().push_back(interp);
+  br.history_assumptions_.mutable_back().push_back(asmpt);
+  br.history_assumptions_interp_.mutable_back().push_back(interp);
 }
 
 smt::TermVec SymbolicSimulatorBranch::all_assumptions(size_t branch_idx) const
 {
   smt::TermVec ret_vec;
-  for (const auto & l : symsim_branches[branch_idx].history_assumptions_) {
-    for (const auto & c : l) {
-      ret_vec.push_back(c);
-    }
-  }
+  symsim_branches[branch_idx].history_assumptions_.for_each(
+      [&](const smt::TermVec & l) {
+        for (const auto & c : l) {
+          ret_vec.push_back(c);
+        }
+      });
   return ret_vec;
 }
 
 std::vector<std::string> SymbolicSimulatorBranch::all_assumption_interp(size_t branch_idx) const
 {
   std::vector<std::string> ret_vec;
-  for (const auto & l : symsim_branches[branch_idx].history_assumptions_interp_) {
-    for (const auto & c : l) {
-      ret_vec.push_back(c);
-    }
-  }
+  symsim_branches[branch_idx].history_assumptions_interp_.for_each(
+      [&](const std::vector<std::string> & l) {
+        for (const auto & c : l) {
+          ret_vec.push_back(c);
+        }
+      });
   return ret_vec;
 }
 
@@ -231,14 +234,14 @@ void SymbolicSimulatorBranch::backtrack(size_t branch_idx)
   br.trace_.pop_back();
   br.history_assumptions_.pop_back();
   br.history_assumptions_interp_.pop_back();
-  br.history_choice_.back().UsedInSim_ = false;
+  br.history_choice_.mutable_back().UsedInSim_ = false;
 }
 
 void SymbolicSimulatorBranch::free_init(const smt::UnorderedTermMap & var_assignment) {
   assert(symsim_branches.size() == 1);
   auto & br = symsim_branches.at(0);
   br.trace_.push_back(var_assignment);
-  auto & var_assignment_ref = br.trace_.back();
+  auto & var_assignment_ref = br.trace_.mutable_back();
   for (const auto & v : svar_) {
     if (var_assignment_ref.find(v) == var_assignment_ref.end()) {
       var_assignment_ref[v] =
@@ -266,7 +269,7 @@ void SymbolicSimulatorBranch::init(
 
   br.trace_.push_back(var_assignment);
 
-  auto & var_assignment_ref = br.trace_.back();
+  auto & var_assignment_ref = br.trace_.mutable_back();
   for (const auto & v : svar_) {
     if (var_assignment_ref.find(v) == var_assignment_ref.end()) {
       var_assignment_ref[v] =
@@ -338,16 +341,18 @@ void SymbolicSimulatorBranch::print_current_step_assumptions(size_t branch_idx) 
   
   cout << "<branch #" << branch_idx << ">" << endl;
   int i = 0;
-  for (const auto & l : branch.history_assumptions_) {
-    int j = 0;
-    for (const auto & a : l) {
-      const auto & interp = branch.history_assumptions_interp_.at(i).at(j);
-      cout << "A" << i << ", " << j << " " << interp << endl;
-      cout << "A" << i << ", " << j << " " << a << endl;
-      j++;
-    }
-    i++;
-  }
+  symsim_branches[branch_idx].history_assumptions_.for_each(
+      [&](const smt::TermVec & l) {
+        int j = 0;
+        for (const auto & a : l) {
+          const auto & interp =
+              symsim_branches[branch_idx].history_assumptions_interp_.at(i).at(j);
+          cout << "A" << i << ", " << j << " " << interp << endl;
+          cout << "A" << i << ", " << j << " " << a << endl;
+          j++;
+        }
+        i++;
+      });
 }
 
 
@@ -373,7 +378,7 @@ void SymbolicSimulatorBranch::set_input(const smt::UnorderedTermMap & invar_assi
 
   br.history_choice_.push_back(ChoiceItem(
       pre_assumptions, invar_assign));  // construct by r-value reference
-  auto & c = br.history_choice_.back();
+  auto & c = br.history_choice_.mutable_back();
 
   for (const auto & v : invar_) {
     if (prev_sv.find(v) != prev_sv.end()) {
@@ -397,11 +402,20 @@ void SymbolicSimulatorBranch::set_input(const smt::UnorderedTermMap & invar_assi
   auto submap(prev_sv);  // copy here is needed anyway
   submap.insert(invar_assign_all.begin(), invar_assign_all.end());
 
+  // one walker per step: SmtSolver::substitute re-converts the whole
+  // substitution map into solver-native terms on every call (e.g.
+  // BzlaSolver::substitute) -- O(s) per call, O(s^2) per step. A shared
+  // SubstitutionWalker converts the map once (its cache is pre-populated in
+  // the constructor and persists across visit() calls) and also reuses
+  // substituted-subterm results across the overlapping cones of these terms.
+  smt::SubstitutionWalker constraint_walker(solver_, submap);
+
   // TODO: constraints here are different from those in COSA btor parser!
   // the second Boolean has no use in our case
   smt::TermVec assmpt_vec;
   for (const auto & vect : ts_.constraints()) {
-    auto assumption = solver_->substitute(vect.first, submap);
+    smt::Term constraint = vect.first;
+    auto assumption = constraint_walker.visit(constraint);
     assmpt_vec.push_back(assumption);
   }
   if (!assmpt_vec.empty()) {
@@ -412,15 +426,16 @@ void SymbolicSimulatorBranch::set_input(const smt::UnorderedTermMap & invar_assi
       assmpt = solver_->make_term(smt::And, assmpt_vec);
     }
 
-    br.history_assumptions_.back().push_back(assmpt);
-    br.history_assumptions_interp_.back().push_back(
-      "ts.asmpt @" + (std::to_string(br.trace_.size() - 1)));
+    br.history_assumptions_.mutable_back().push_back(assmpt);
+    br.history_assumptions_interp_.mutable_back().push_back(
+        "ts.asmpt @" + (std::to_string(br.trace_.size() - 1)));
   }
 
   for (const auto & vect : pre_assumptions) {
-    auto assmpt_temp = solver_->substitute(vect, submap);
-    br.history_assumptions_.back().push_back(assmpt_temp);
-    br.history_assumptions_interp_.back().push_back(
+    smt::Term pre = vect;
+    auto assmpt_temp = constraint_walker.visit(pre);
+    br.history_assumptions_.mutable_back().push_back(assmpt_temp);
+    br.history_assumptions_interp_.mutable_back().push_back(
         vect->to_string() + "@" + std::to_string(br.trace_.size() - 1));
   }
 }  // end of set_input
@@ -432,8 +447,8 @@ void SymbolicSimulatorBranch::undo_set_input(size_t branch_idx)
   const auto & c = br.history_choice_.back();  // avoid copy
   assert(!c.UsedInSim_);
   auto l = c.get_prev_assumption_len();
-  br.history_assumptions_.back().resize(l);
-  br.history_assumptions_interp_.back().resize(l);
+  br.history_assumptions_.mutable_back().resize(l);
+  br.history_assumptions_interp_.mutable_back().resize(l);
   br.history_choice_.pop_back();  // you can only pop in the end, o.w. reference will fail
 }
 
@@ -480,7 +495,7 @@ void SymbolicSimulatorBranch::sim_one_step(size_t branch_idx)
   auto & br = symsim_branches[branch_idx];
   assert(br.history_choice_.size() != 0);
 
-  auto & c = br.history_choice_.back();
+  auto & c = br.history_choice_.mutable_back();
   c.setSim();
 
   const auto & invar_assign = c.var_assign_;
@@ -488,8 +503,11 @@ void SymbolicSimulatorBranch::sim_one_step(size_t branch_idx)
   smt::UnorderedTermMap svmap;
   auto submap = prev_sv;
   submap.insert(invar_assign.begin(), invar_assign.end());
+  // one substitution walker for all update functions (see set_input)
+  smt::SubstitutionWalker update_walker(solver_, submap);
   for (const auto & sv : ts_.state_updates()) {
-    svmap[sv.first] = solver_->substitute(sv.second, submap);
+    smt::Term update = sv.second;
+    svmap[sv.first] = update_walker.visit(update);
   }
   br.trace_.push_back(
       std::move(svmap));  // svmap will not be used afterwards, avoid copy
