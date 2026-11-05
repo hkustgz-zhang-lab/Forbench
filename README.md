@@ -14,6 +14,7 @@ The framework operates on hardware designs represented as transition systems. A 
   - [Active-stepping testbench](#active-stepping-testbench)
   - [Coroutine-based testbench](#coroutine-based-testbench)
 - [🔗 Citation](#-citation)
+- [📜 License and Patent Notice](#-license-and-patent-notice)
 
 ## 📖 Introduction
 
@@ -182,3 +183,16 @@ If you find this repository is useful, please star🌟 this repo and cite🖇️
   year      = {2026}
 }
 ```
+
+## 📜 License and Patent Notice
+
+Forbench is distributed under the [PolyForm Noncommercial License 1.0.0](LICENSE.txt). Noncommercial use is permitted under the terms of that license.
+
+A Chinese patent application covering the symbolic-testbench-based verification methodology has been filed:
+
+- **Filing date:** April 9, 2026
+- **Application number:** 2026104677150
+
+If the patent is granted, we grant permission to use the patented methodology for noncommercial purposes, subject to the terms of `LICENSE.txt`.
+
+Commercial use requires a separate license. As our research group needs funding to continue this work, please contact Hongce Zhang at [hongcezh@hkust-gz.edu.cn](mailto:hongcezh@hkust-gz.edu.cn) to discuss commercial use and support our research. Thanks!
