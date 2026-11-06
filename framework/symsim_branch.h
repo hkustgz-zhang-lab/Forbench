@@ -13,6 +13,7 @@
 #include "term_manip.h"
 #include "ts.h"
 #include "choice_item.h"
+#include "cow_stack.h"
 
 #include <functional>
 #include <iostream>
@@ -36,6 +37,8 @@ class SymbolicSimulatorBranch
   class Branch{
     public:
     Branch(): finished(false) {}
+    // CowStack copies are O(1): the forked branch shares all history frames
+    // with its parent and copies a frame only when it diverges (copy-on-write)
     Branch(const Branch & other) :
       trace_(other.trace_),
       history_choice_(other.history_choice_),
@@ -43,10 +46,10 @@ class SymbolicSimulatorBranch
       history_assumptions_interp_(other.history_assumptions_interp_),
       finished(false) { }
 
-    std::vector<smt::UnorderedTermMap> trace_; // the state variable map of each step
-    std::vector<ChoiceItem> history_choice_;   // the choice of each step (input var map & assumptions)
-    std::vector<smt::TermVec> history_assumptions_; // the assumptions of each step
-    std::vector<std::vector<std::string>> history_assumptions_interp_; // the text descriptions of these assumptions
+    CowStack<smt::UnorderedTermMap> trace_; // the state variable map of each step
+    CowStack<ChoiceItem> history_choice_;   // the choice of each step (input var map & assumptions)
+    CowStack<smt::TermVec> history_assumptions_; // the assumptions of each step
+    CowStack<std::vector<std::string>> history_assumptions_interp_; // the text descriptions of these assumptions
 
     bool finished; // whether this branch has finished or not // HZ: maybe currently this is not needed
     // maybe we can retarget this for other purpose in the future... (branch merge etc.)
