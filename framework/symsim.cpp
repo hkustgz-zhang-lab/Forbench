@@ -1,5 +1,6 @@
 #include "symsim.h"
 
+#include "smt-switch/substitution_walker.h"
 #include "smt-switch/utils.h"
 
 #include "printer/vcd_witness_printer.h"
@@ -315,11 +316,20 @@ void SymbolicSimulator::set_input(const smt::UnorderedTermMap & invar_assign,
   auto submap(prev_sv);  // copy here is needed anyway
   submap.insert(invar_assign_all.begin(), invar_assign_all.end());
 
+  // one walker per step: SmtSolver::substitute re-converts the whole
+  // substitution map into solver-native terms on every call (e.g.
+  // BzlaSolver::substitute) -- O(s) per call, O(s^2) per step. A shared
+  // SubstitutionWalker converts the map once (its cache is pre-populated in
+  // the constructor and persists across visit() calls) and also reuses
+  // substituted-subterm results across the overlapping cones of these terms.
+  smt::SubstitutionWalker constraint_walker(solver_, submap);
+
   // TODO: constraints here are different from those in COSA btor parser!
   // the second Boolean has no use in our case
   smt::TermVec assmpt_vec;
   for (const auto & vect : ts_.constraints()) {
-    auto assumption = solver_->substitute(vect.first, submap);
+    smt::Term constraint = vect.first;
+    auto assumption = constraint_walker.visit(constraint);
     assmpt_vec.push_back(assumption);
   }
   if (!assmpt_vec.empty()) {
@@ -336,7 +346,8 @@ void SymbolicSimulator::set_input(const smt::UnorderedTermMap & invar_assign,
   }
 
   for (const auto & vect : pre_assumptions) {
-    auto assmpt_temp = solver_->substitute(vect, submap);
+    smt::Term pre = vect;
+    auto assmpt_temp = constraint_walker.visit(pre);
     history_assumptions_.back().push_back(assmpt_temp);
     history_assumptions_interp_.back().push_back(
         vect->to_string() + "@" + std::to_string(trace_.size() - 1));
@@ -411,8 +422,11 @@ void SymbolicSimulator::sim_one_step()
   smt::UnorderedTermMap svmap;
   auto submap = prev_sv;
   submap.insert(invar_assign.begin(), invar_assign.end());
+  // one substitution walker for all update functions (see set_input)
+  smt::SubstitutionWalker update_walker(solver_, submap);
   for (const auto & sv : ts_.state_updates()) {
-    svmap[sv.first] = solver_->substitute(sv.second, submap);
+    smt::Term update = sv.second;
+    svmap[sv.first] = update_walker.visit(update);
   }
   trace_.push_back(
       std::move(svmap));  // svmap will not be used afterwards, avoid copy
