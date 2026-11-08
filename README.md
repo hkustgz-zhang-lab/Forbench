@@ -193,7 +193,7 @@ Forbench is distributed under the [PolyForm Noncommercial License 1.0.0](LICENSE
 A Chinese patent application covering the symbolic-testbench-based verification methodology has been filed:
 
 - **Filing date:** April 9, 2026
-- **Application number:** 2026104677150
+- **Application number:** CN202610467715.0
 
 If the patent is granted, we grant permission to use the patented methodology for noncommercial purposes, subject to the terms of `LICENSE.txt`.
 
